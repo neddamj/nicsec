@@ -27,6 +27,8 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from typing import List
+import torch
 from torch.hub import load_state_dict_from_url
 from compressai.zoo.pretrained import load_pretrained
 
@@ -86,8 +88,13 @@ cfgs = {
 }
 
 def _load_model(
-    architecture, metric, quality, pretrained=False, progress=True, **kwargs
-):
+        architecture: List, 
+        metric: str, 
+        quality: int, 
+        pretrained: bool=False, 
+        progress: bool=True, 
+        **kwargs
+    ) -> torch.nn.Module:
     if architecture not in model_architectures:
         raise ValueError(f'Invalid architecture name "{architecture}"')
 
@@ -113,8 +120,12 @@ def _load_model(
 
 
 def my_bmshj2018_factorized(
-    quality, metric="mse", pretrained=False, progress=True, **kwargs
-):
+        quality: int, 
+        metric: str = "mse", 
+        pretrained: bool = False, 
+        progress: bool = True, 
+        **kwargs
+    ) -> torch.nn.Module:
     r"""Factorized Prior model from J. Balle, D. Minnen, S. Singh, S.J. Hwang,
     N. Johnston: `"Variational Image Compression with a Scale Hyperprior"
     <https://arxiv.org/abs/1802.01436>`_, Int Conf. on Learning Representations
