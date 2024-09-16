@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 
 def box_mask(
         data: torch.Tensor, 
-        box_min=0, 
-        box_max=50
+        box_min: int = 0, 
+        box_max: int = 50
     ) -> torch.Tensor:
     # Create a mask the same shape as the image
     mask = torch.zeros_like(data)
@@ -14,15 +14,16 @@ def box_mask(
 
 def dot_mask(
         data: torch.Tensor, 
-        skipped_pixels=5
+        vertical_skip: int = 5,
+        horizontal_skip: int = 5,
     ) -> torch.Tensor:
     # Image size
     height, width = data.shape[-2], data.shape[-1]
     image = torch.zeros(1, height, width)  # Create a white image
 
     # Create a mask for every nth pixel horizontally and vertically
-    for y in range(0, height, skipped_pixels):
-        for x in range(0, width, skipped_pixels):
+    for y in range(0, height, vertical_skip):
+        for x in range(0, width, horizontal_skip):
             image[0, y, x] = 1  # Set the pixel to white
     return image.unsqueeze(0)
 
