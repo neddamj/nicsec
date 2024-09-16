@@ -19,7 +19,7 @@ def dot_mask(
     ) -> torch.Tensor:
     # Image size
     height, width = data.shape[-2], data.shape[-1]
-    image = torch.zeros(1, height, width)  # Create a white image
+    image = torch.zeros(1, height, width)  # Create a black image
 
     # Create a mask for every nth pixel horizontally and vertically
     for y in range(0, height, vertical_skip):
@@ -35,7 +35,7 @@ def ring_mask(
     ) -> torch.Tensor:
     # Image size
     height, width = data.shape[-2], data.shape[-1]
-    image = torch.zeros(1, height, width)  # Create a black image (1 channel)
+    image = torch.zeros(1, height, width)  # Create a black image
 
     # Coordinates grid
     y = torch.arange(height).unsqueeze(1).repeat(1, width)
