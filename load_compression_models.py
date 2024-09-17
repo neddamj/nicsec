@@ -34,16 +34,14 @@ import torch
 from torch.hub import load_state_dict_from_url
 from compressai.zoo.pretrained import load_pretrained
 
-from models import MyFactorizedPrior
-
-from compressai.models import (
-    Cheng2020Anchor,
-    Cheng2020Attention,
-    FactorizedPrior,
-    FactorizedPriorReLU,
-    JointAutoregressiveHierarchicalPriors,
-    MeanScaleHyperprior,
-    ScaleHyperprior,
+from models import (
+    MyFactorizedPrior, 
+    MyFactorizedPriorReLU, 
+    MyMeanScaleHyperprior,
+    MyScaleHyperprior,
+    MyJointAutoregressiveHierarchicalPriors,
+    MyCheng2020Anchor,
+    MyCheng2020Attention
 )
 
 __all__ = [
@@ -58,12 +56,12 @@ __all__ = [
 
 model_architectures = {
     "bmshj2018-factorized": MyFactorizedPrior,
-    "bmshj2018_factorized_relu": FactorizedPriorReLU,
-    "bmshj2018-hyperprior": ScaleHyperprior,
-    "mbt2018-mean": MeanScaleHyperprior,
-    "mbt2018": JointAutoregressiveHierarchicalPriors,
-    "cheng2020-anchor": Cheng2020Anchor,
-    "cheng2020-attn": Cheng2020Attention,
+    "bmshj2018_factorized_relu": MyFactorizedPriorReLU,
+    "bmshj2018-hyperprior": MyScaleHyperprior,
+    "mbt2018-mean": MyMeanScaleHyperprior,
+    "mbt2018": MyJointAutoregressiveHierarchicalPriors,
+    "cheng2020-anchor": MyCheng2020Anchor,
+    "cheng2020-attn": MyCheng2020Attention,
 }
 
 root_url = "https://compressai.s3.amazonaws.com/models/v1"
@@ -323,7 +321,7 @@ def my_bmshj2018_factorized(
         "bmshj2018-factorized", metric, quality, pretrained, progress, **kwargs
     )
 
-def bmshj2018_factorized_relu(
+def my_bmshj2018_factorized_relu(
     quality, metric="mse", pretrained=False, progress=True, **kwargs
 ):
     r"""Factorized Prior model from J. Balle, D. Minnen, S. Singh, S.J. Hwang,
@@ -348,7 +346,7 @@ def bmshj2018_factorized_relu(
     )
 
 
-def bmshj2018_hyperprior(
+def my_bmshj2018_hyperprior(
     quality, metric="mse", pretrained=False, progress=True, **kwargs
 ):
     r"""Scale Hyperprior model from J. Balle, D. Minnen, S. Singh, S.J. Hwang,
@@ -373,7 +371,7 @@ def bmshj2018_hyperprior(
     )
 
 
-def mbt2018_mean(quality, metric="mse", pretrained=False, progress=True, **kwargs):
+def my_mbt2018_mean(quality, metric="mse", pretrained=False, progress=True, **kwargs):
     r"""Scale Hyperprior with non zero-mean Gaussian conditionals from D.
     Minnen, J. Balle, G.D. Toderici: `"Joint Autoregressive and Hierarchical
     Priors for Learned Image Compression" <https://arxiv.org/abs/1809.02736>`_,
@@ -394,7 +392,7 @@ def mbt2018_mean(quality, metric="mse", pretrained=False, progress=True, **kwarg
     return _load_model("mbt2018-mean", metric, quality, pretrained, progress, **kwargs)
 
 
-def mbt2018(quality, metric="mse", pretrained=False, progress=True, **kwargs):
+def my_mbt2018(quality, metric="mse", pretrained=False, progress=True, **kwargs):
     r"""Joint Autoregressive Hierarchical Priors model from D.
     Minnen, J. Balle, G.D. Toderici: `"Joint Autoregressive and Hierarchical
     Priors for Learned Image Compression" <https://arxiv.org/abs/1809.02736>`_,
@@ -415,7 +413,7 @@ def mbt2018(quality, metric="mse", pretrained=False, progress=True, **kwargs):
     return _load_model("mbt2018", metric, quality, pretrained, progress, **kwargs)
 
 
-def cheng2020_anchor(quality, metric="mse", pretrained=False, progress=True, **kwargs):
+def my_cheng2020_anchor(quality, metric="mse", pretrained=False, progress=True, **kwargs):
     r"""Anchor model variant from `"Learned Image Compression with
     Discretized Gaussian Mixture Likelihoods and Attention Modules"
     <https://arxiv.org/abs/2001.01568>`_, by Zhengxue Cheng, Heming Sun, Masaru
@@ -438,7 +436,7 @@ def cheng2020_anchor(quality, metric="mse", pretrained=False, progress=True, **k
     )
 
 
-def cheng2020_attn(quality, metric="mse", pretrained=False, progress=True, **kwargs):
+def my_cheng2020_attn(quality, metric="mse", pretrained=False, progress=True, **kwargs):
     r"""Self-attention model variant from `"Learned Image Compression with
     Discretized Gaussian Mixture Likelihoods and Attention Modules"
     <https://arxiv.org/abs/2001.01568>`_, by Zhengxue Cheng, Heming Sun, Masaru
