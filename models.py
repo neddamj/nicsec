@@ -29,7 +29,7 @@ class MyFactorizedPrior(FactorizedPrior):
 
         return {
             "x_hat": x_hat,
-            "y_hat": y_hat,
+            "y_hat": y,
             "likelihoods": {
                 "y": y_likelihoods,
             },
@@ -46,7 +46,7 @@ class MyFactorizedPriorReLU(FactorizedPriorReLU):
 
         return {
             "x_hat": x_hat,
-            "y_hat": y_hat,
+            "y_hat": y,
             "likelihoods": {
                 "y": y_likelihoods,
             },
@@ -66,7 +66,7 @@ class MyScaleHyperprior(ScaleHyperprior):
 
         return {
             "x_hat": x_hat,
-            "y_hat": y_hat,
+            "y_hat": y,
             "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
         }
     
@@ -85,7 +85,7 @@ class MyMeanScaleHyperprior(MeanScaleHyperprior):
 
         return {
             "x_hat": x_hat,
-            "y_hat": y_hat,
+            "y_hat": y,
             "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
         }
     
@@ -112,7 +112,7 @@ class MyJointAutoregressiveHierarchicalPriors(JointAutoregressiveHierarchicalPri
 
         return {
             "x_hat": x_hat,
-            "y_hat": y_hat,
+            "y_hat": y,
             "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
         }
     
