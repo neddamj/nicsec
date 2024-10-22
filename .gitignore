@@ -3,3 +3,4 @@ data
 __pycache__
 generate_masks.ipynb
 wandb/
+attack_neural_compression.ipynb

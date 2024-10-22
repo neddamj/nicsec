@@ -52,25 +52,6 @@ def setup_wandb(config, wandb_available):
         wandb.init(project="neural-image-compression-attack")
         wandb.config.update(config)
 
-def run_attack(attack, x, dataloader, num_batches, net, device, config):
-    for i, (x_hat, _) in enumerate(dataloader):
-        x_hat = x_hat.to(device)
-        x_src = x_hat.clone()
-        x_hat.requires_grad = True
-        mask = attack.init_mask(x_hat, config['mask_type'])
-
-        optimizer = torch.optim.Adam([x_hat], lr=config['lr'])
-        scheduler = CosineAnnealingLR(optimizer, T_max=config['num_steps'] / 10)
-        x_adv, loss_tracker = attack.run(x, x_hat, optimizer=optimizer, scheduler=scheduler, num_steps=config['num_steps'], mask=mask)
-
-        with torch.no_grad():
-            output = net(x_adv)['x_hat']
-
-        attack.batch_eval(x, x_adv, output)
-        if i == num_batches - 1:
-            break
-    attack.global_eval()
-
 def main(config):
     net = get_model(config['model_id'], device)
 
