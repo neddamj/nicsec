@@ -1,7 +1,9 @@
-# Pytorch
 import torch
 import torch.nn as nn
-# Local
+import zlib
+import numpy as np
+from io import BytesIO
+
 from .modules import compress_jpeg, decompress_jpeg
 from .utils import diff_round, quality_to_factor
 
@@ -21,14 +23,32 @@ class DiffJPEG(nn.Module):
         else:
             rounding = torch.round
         factor = quality_to_factor(quality)
-        self.compress = compress_jpeg(rounding=rounding, factor=factor)
-        self.decompress = decompress_jpeg(height, width, rounding=rounding,
+        self.analysis = compress_jpeg(rounding=rounding, factor=factor)
+        self.synthesis = decompress_jpeg(height, width, rounding=rounding,
                                           factor=factor)
 
     def forward(self, x):
-        y_hat, shape = self.compress(x)
-        x_hat = self.decompress(y_hat, shape)
+        y_hat, shape = self.analysis(x)
+        x_hat = self.synthesis(y_hat, shape)
         return {
             'x_hat': x_hat,
             'y_hat': y_hat
         }
+    
+    def compress(self, x):
+        y_hat, shape = self.analysis(x)
+        np_data = y_hat.cpu().detach().numpy()
+        buffer = BytesIO()
+        np.save(buffer, np_data)  # Save numpy array to buffer
+        byte_data = buffer.getvalue()
+        strings = zlib.compress(byte_data)
+        return {'strings': strings, 'shape': shape}
+
+    def decompress(self, strings, shape):
+        decompressed_data = zlib.decompress(strings)
+        buffer = BytesIO(decompressed_data)
+        np_data = np.load(buffer)  
+        tensor = torch.from_numpy(np_data)
+        # Decode the tensor back to an image
+        x_hat = self.synthesis(tensor, shape)
+        return {'x_hat': x_hat}

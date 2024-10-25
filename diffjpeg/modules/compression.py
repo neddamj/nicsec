@@ -7,7 +7,6 @@ import torch.nn as nn
 # Local
 from ..utils import c_table, y_table
 
-
 class rgb_to_ycbcr_jpeg(nn.Module):
     """ Converts RGB image to YCbCr
     Input:
@@ -31,8 +30,6 @@ class rgb_to_ycbcr_jpeg(nn.Module):
         result.view(image.shape)
         return result
 
-
-
 class chroma_subsampling(nn.Module):
     """ Chroma subsampling on CbCv channels
     Input:
@@ -55,7 +52,6 @@ class chroma_subsampling(nn.Module):
         cr = cr.permute(0, 2, 3, 1)
         return image[:, :, :, 0], cb.squeeze(3), cr.squeeze(3)
 
-
 class block_splitting(nn.Module):
     """ Splitting image into patches
     Input:
@@ -74,7 +70,6 @@ class block_splitting(nn.Module):
         image_transposed = image_reshaped.permute(0, 1, 3, 2, 4)
         return image_transposed.contiguous().view(batch_size, -1, self.k, self.k)
     
-
 class dct_8x8(nn.Module):
     """ Discrete Cosine Transformation
     Input:
@@ -99,7 +94,6 @@ class dct_8x8(nn.Module):
         result.view(image.shape)
         return result
 
-
 class y_quantize(nn.Module):
     """ JPEG Quantization for Y channel
     Input:
@@ -120,7 +114,6 @@ class y_quantize(nn.Module):
         image = self.rounding(image)
         return image
 
-
 class c_quantize(nn.Module):
     """ JPEG Quantization for CrCb channels
     Input:
@@ -140,7 +133,6 @@ class c_quantize(nn.Module):
         image = image.float() / (self.c_table * self.factor)
         image = self.rounding(image)
         return image
-
 
 class compress_jpeg(nn.Module):
     """ Full JPEG compression algortihm

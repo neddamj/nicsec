@@ -7,7 +7,6 @@ import torch.nn as nn
 # Local
 from ..utils import c_table, y_table
 
-
 class y_dequantize(nn.Module):
     """ Dequantize Y channel
     Inputs:
@@ -25,7 +24,6 @@ class y_dequantize(nn.Module):
     def forward(self, image):
         return image * (self.y_table * self.factor)
 
-
 class c_dequantize(nn.Module):
     """ Dequantize CbCr channel
     Inputs:
@@ -42,7 +40,6 @@ class c_dequantize(nn.Module):
 
     def forward(self, image):
         return image * (self.c_table * self.factor)
-
 
 class idct_8x8(nn.Module):
     """ Inverse discrete Cosine Transformation
@@ -68,7 +65,6 @@ class idct_8x8(nn.Module):
         result.view(image.shape)
         return result
 
-
 class block_merging(nn.Module):
     """ Merge pathces into image
     Inputs:
@@ -87,7 +83,6 @@ class block_merging(nn.Module):
         image_reshaped = patches.view(batch_size, height//k, width//k, k, k)
         image_transposed = image_reshaped.permute(0, 1, 3, 2, 4)
         return image_transposed.contiguous().view(batch_size, height, width)
-
 
 class chroma_upsampling(nn.Module):
     """ Upsample chroma layers
@@ -114,7 +109,6 @@ class chroma_upsampling(nn.Module):
         
         return torch.cat([y.unsqueeze(3), cb.unsqueeze(3), cr.unsqueeze(3)], dim=3)
 
-
 class ycbcr_to_rgb_jpeg(nn.Module):
     """ Converts YCbCr image to RGB JPEG
     Input:
@@ -133,10 +127,8 @@ class ycbcr_to_rgb_jpeg(nn.Module):
 
     def forward(self, image):
         result = torch.tensordot(image + self.shift, self.matrix, dims=1)
-        #result = torch.from_numpy(result)
         result.view(image.shape)
         return result.permute(0, 3, 1, 2)
-
 
 class decompress_jpeg(nn.Module):
     """ Full JPEG decompression algortihm
