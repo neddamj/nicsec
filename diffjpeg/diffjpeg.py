@@ -36,19 +36,31 @@ class DiffJPEG(nn.Module):
         }
     
     def compress(self, x):
-        y_hat, shape = self.analysis(x)
-        np_data = y_hat.cpu().detach().numpy()
-        buffer = BytesIO()
-        np.save(buffer, np_data)  # Save numpy array to buffer
-        byte_data = buffer.getvalue()
-        strings = zlib.compress(byte_data)
-        return {'strings': strings, 'shape': shape}
-
+        compressed_images = []
+        shape = None
+        for i in range(x.shape[0]):
+            single_image = x[i:i+1] 
+            y_hat, shape = self.analysis(single_image)
+            np_data = y_hat.cpu().detach().numpy()
+            buffer = BytesIO()
+            np.save(buffer, np_data)  # Save numpy array to buffer
+            byte_data = buffer.getvalue()
+            compressed_string = zlib.compress(byte_data)
+            # Append each image's compressed data
+            compressed_images.append([compressed_string])
+        # Return the compressed data and single shape
+        return {'strings': compressed_images, 'shape': shape}
+    
     def decompress(self, strings, shape):
-        decompressed_data = zlib.decompress(strings)
-        buffer = BytesIO(decompressed_data)
-        np_data = np.load(buffer)  
-        tensor = torch.from_numpy(np_data)
-        # Decode the tensor back to an image
-        x_hat = self.synthesis(tensor, shape)
-        return {'x_hat': x_hat}
+        decompressed_images = []
+        for i, compressed_string in enumerate(strings):
+            decompressed_data = zlib.decompress(compressed_string[0])
+            buffer = BytesIO(decompressed_data)
+            np_data = np.load(buffer)  
+            tensor = torch.from_numpy(np_data)            
+            # Decode the tensor back to an image
+            x_hat = self.synthesis(tensor, shape)
+            decompressed_images.append(x_hat)
+        # Stack all decompressed images along the batch dimension
+        x_hat_batch = torch.cat(decompressed_images, dim=0)
+        return {'x_hat': x_hat_batch}

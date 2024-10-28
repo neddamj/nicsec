@@ -53,7 +53,6 @@ class MetricsEvaluator:
         return psnr
 
     def _ssim(self, img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
-        # Add SSIM calculation here. For now, we will return a dummy value.
         return ssim(img1, img2.unsqueeze(0), data_range=1.0)
 
     def _l2_norm(self, img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
@@ -194,7 +193,7 @@ class Attack:
         target_img = target_img.to(self.device)
         mask = mask.to(self.device)
         # Get the embedding of the source image and make a copy of the target
-        src_emb = self.model.forward(src_img)['y_hat']
+        src_emb = self.model(src_img)['y_hat']
 
         # Track the best performance
         best_img = None
@@ -202,7 +201,7 @@ class Attack:
 
         pbar = tqdm(range(num_steps))
         for iter in pbar:  
-            out = self.model.forward(target_img)
+            out = self.model(target_img)
             target_emb = out['y_hat']
             loss = self.criterion(src_emb, target_emb)
             pbar.set_description(f"[Running attack]: Loss {loss.item()}")

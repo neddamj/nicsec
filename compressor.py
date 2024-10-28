@@ -31,7 +31,7 @@ class NeuralCompressor:
         self.model = models[model_id].train().to(torch.float32).to(device)
 
     def __call__(self, x: torch.Tensor):
-        return self.model(x)['y_hat']
+        return self.model(x)
 
     def compress(self, x: torch.Tensor) -> Dict:
         return self.model.compress(x)
@@ -43,9 +43,11 @@ class JpegCompressor:
     def __init__(
             self, 
             differentiable: bool = True, 
-            quality_factor: int = 80
+            quality_factor: int = 80,
+            image_size: int = 256,
+            device: str = 'cpu'
             ) -> None:
-        self.jpeg = DiffJPEG(height=256, width=256, differentiable=differentiable, quality=80)
+        self.jpeg = DiffJPEG(height=image_size, width=image_size, differentiable=differentiable, quality=80).to(device)
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         return self.jpeg(x)
