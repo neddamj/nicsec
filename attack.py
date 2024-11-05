@@ -3,6 +3,7 @@ warnings.filterwarnings("ignore")
 
 import torch
 import torch.nn.functional as F
+from torch.optim.lr_scheduler import LambdaLR, CosineAnnealingLR
 from tqdm import tqdm
 from pytorch_msssim import ssim
 
@@ -143,7 +144,7 @@ class Attack:
         # Evaluation metrics
         self.evaluator = MetricsEvaluator(self.batch_size, use_wandb=wandb_available)
         
-    def init_mask(
+    def _init_mask(
             self,
             image: torch.Tensor,
             mask_type: str = 'dot',
@@ -157,7 +158,7 @@ class Attack:
             mask = ring_mask(image, num_rings=num_rings, ring_width=ring_width, ring_separation=ring_separation)
         elif mask_type == 'dot':
             vertical_skip = 2 
-            horizontal_skip = 3
+            horizontal_skip = 2
             mask = dot_mask(image, vertical_skip=vertical_skip, horizontal_skip=horizontal_skip)
         return mask
     
@@ -165,6 +166,22 @@ class Attack:
         if mask is not None:
             grad *= mask
         return grad
+    
+    def _init_scheduler(
+            self,
+            config: Dict,
+            optimizer: torch.optim.Optimizer,
+            scale_factor : float = 0.1
+    ) -> torch.optim.lr_scheduler.LRScheduler:
+        scheduler_type = config['scheduler_type']
+        if scheduler_type == 'lambda':
+            lambda_lr = lambda iteration: scale_factor ** (iteration // (config['num_steps']/2))
+            scheduler = LambdaLR(optimizer, lr_lambda=lambda_lr)
+        elif scheduler_type == 'cosine':
+            scheduler = CosineAnnealingLR(optimizer, T_max=config['num_steps'] / 10)
+        else:
+            raise ValueError("Invalid scheduler type. Use 'cosine' or 'lambda'.")
+        return scheduler
     
     def criterion(
             self,
@@ -227,10 +244,11 @@ class Attack:
             x_hat = x_hat.to(device)
             x_src = x_hat.clone()
             x_hat.requires_grad = True
-            mask = self.init_mask(x_hat, config['mask_type'])
+            mask = self._init_mask(x_hat, config['mask_type'])
 
             optimizer = torch.optim.Adam([x_hat], lr=config['lr'])
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config['num_steps'] / 10)
+            scheduler = self._init_scheduler(config, optimizer)
+            #torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config['num_steps'] / 10)
             x_adv, loss_tracker = self.attack_batch(x, x_hat, optimizer=optimizer, scheduler=scheduler, num_steps=config['num_steps'], mask=mask)
             with torch.no_grad():
                 output = net(x_adv)['x_hat']

@@ -22,15 +22,15 @@ torch.backends.cudnn.allow_tf32 = False
 
 device = 'cpu'
 if torch.cuda.is_available():
-    device = 'cuda' 
+    device = 'cuda'
 elif torch.backends.mps.is_available():
     device = 'mps'
 
-def get_compressor(compressor_type, model_id, device, quality_factor=2, image_size=256):
-    if compressor_type == 'neural':
-        return NeuralCompressor(model_id=model_id, device=device)
-    elif compressor_type == 'jpeg':
-        return JpegCompressor(differentiable=True, quality_factor=quality_factor, image_size=image_size, device=device)
+def get_compressor(config, device):
+    if config['compressor_type'] == 'neural':
+        return NeuralCompressor(model_id=config['model_id'], device=device)
+    elif config['compressor_type'] == 'jpeg':
+        return JpegCompressor(differentiable=True, quality_factor=config['quality_factor'], image_size=config['image_size'], device=device)
     else:
         raise ValueError("Invalid compressor type. Use 'neural' or 'jpeg'.")
 
@@ -41,7 +41,7 @@ def setup_wandb(config, wandb_available):
         wandb.config.update(config)
 
 def main(config):
-    compressor = get_compressor(config['compressor_type'], config['model_id'], device, config['image_size'])
+    compressor = get_compressor(config, device)
 
     transform = transforms.Compose([
         transforms.Resize((config['image_size'], config['image_size'])), 
@@ -55,17 +55,20 @@ def main(config):
     x = dataset[0][0].unsqueeze(0).to(device)
     attack = Attack(model=compressor, batch_size=config['batch_size'], device=device)
     x_src, x_adv, loss_tracker =  attack.attack(x, dataloader, compressor, device, config)
+    return x_src, x_adv, loss_tracker
 
 if __name__ == '__main__':
     # Run the attack
     config = {
         'lr': 3e-2,
-        'batch_size': 2,
-        'num_batches': 1,
-        'num_steps': 1000,
-        'image_size': 256,
-        'mask_type': 'dot', 
-        'compressor_type': 'jpeg',   
-        'model_id': 'my_bmshj2018_factorized_relu'
+        'batch_size': 32,
+        'num_batches': 30,
+        'num_steps': 20000,
+        'image_size': 128,
+        'quality_factor': 6,
+        'mask_type': 'dot',
+        'compressor_type': 'neural',    # 'neural' or 'jpeg'
+        'scheduler_type': 'lambda',     # 'lambda' or 'cosine
+        'model_id': 'my_bmshj2018_hyperprior'
     }
-    main(config)
+    x_src, x_adv, _ = main(config)
