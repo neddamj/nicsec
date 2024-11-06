@@ -240,6 +240,7 @@ class Attack:
         return best_img, loss_tracker
     
     def attack(self, x, dataloader, net, device, config):
+        x_clone = x.clone()
         for i, (x_hat, _) in enumerate(dataloader):
             x_hat = x_hat.to(device)
             x_src = x_hat.clone()
@@ -253,12 +254,12 @@ class Attack:
             with torch.no_grad():
                 output = net(x_adv)['x_hat']
 
-            self.batch_eval(x, x_adv, output)
+            self.batch_eval(x_clone, x_adv, output)
             if i == config['num_batches'] - 1:
                 break
 
         self.global_eval()
-        return (x_src, x_adv, loss_tracker)
+        return (x, x_adv, loss_tracker)
     
     def batch_eval(
             self, 

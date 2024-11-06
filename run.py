@@ -33,6 +33,15 @@ def get_compressor(config, device):
         return JpegCompressor(differentiable=True, quality_factor=config['quality_factor'], image_size=config['image_size'], device=device)
     else:
         raise ValueError("Invalid compressor type. Use 'neural' or 'jpeg'.")
+    
+def get_dataset(config, transform):
+    if config['dataset'] == 'celeba':
+        dataset = datasets.CelebA(root='./data', split='train', transform=transform, download=True)
+    elif config['dataset'] == 'imagenette':
+        dataset = datasets.Imagenette(root='./data', split='train', transform=transform)
+    else:
+        raise ValueError("Invalid dataset. Use 'celeba' or 'imagenette'.")
+    return dataset
 
 def setup_wandb(config, wandb_available):
     # Setup wandb logging
@@ -47,7 +56,7 @@ def main(config):
         transforms.Resize((config['image_size'], config['image_size'])), 
         transforms.ToTensor()
         ])
-    dataset = datasets.CelebA(root='./data', split='train', transform=transform, download=True)
+    dataset = get_dataset(config, transform)
     dataloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=True, num_workers=4)
 
     setup_wandb(config, wandb_available)
@@ -62,13 +71,14 @@ if __name__ == '__main__':
     config = {
         'lr': 3e-2,
         'batch_size': 32,
-        'num_batches': 30,
-        'num_steps': 20000,
+        'num_batches': 10,
+        'num_steps': 5000,
         'image_size': 128,
-        'quality_factor': 6,
+        'quality_factor': 8,
         'mask_type': 'dot',
+        'dataset': 'imagenette',        # 'celeba' or imagenette'
         'compressor_type': 'neural',    # 'neural' or 'jpeg'
-        'scheduler_type': 'lambda',     # 'lambda' or 'cosine
-        'model_id': 'my_bmshj2018_hyperprior'
+        'scheduler_type': 'cosine',     # 'lambda' or 'cosine
+        'model_id': 'my_bmshj2018_factorized'
     }
     x_src, x_adv, _ = main(config)
