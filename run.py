@@ -22,7 +22,7 @@ torch.backends.cudnn.allow_tf32 = False
 
 device = 'cpu'
 if torch.cuda.is_available():
-    device = 'cuda'
+    device = 'cuda:2'
 elif torch.backends.mps.is_available():
     device = 'mps'
 
@@ -49,7 +49,7 @@ def setup_wandb(config, wandb_available):
         wandb.init(project="neural-image-compression-attack")
         wandb.config.update(config)
 
-def main(config):
+def direct_attack(config):
     compressor = get_compressor(config, device)
 
     transform = transforms.Compose([
@@ -72,13 +72,13 @@ if __name__ == '__main__':
         'lr': 3e-2,
         'batch_size': 32,
         'num_batches': 10,
-        'num_steps': 5000,
+        'num_steps': 20000,
         'image_size': 128,
         'quality_factor': 8,
         'mask_type': 'dot',
         'dataset': 'imagenette',        # 'celeba' or imagenette'
         'compressor_type': 'neural',    # 'neural' or 'jpeg'
         'scheduler_type': 'cosine',     # 'lambda' or 'cosine
-        'model_id': 'my_bmshj2018_factorized'
+        'model_id': 'my_bmshj2018_hyperprior'
     }
-    x_src, x_adv, _ = main(config)
+    x_src, x_adv, _ = direct_attack(config)
