@@ -147,7 +147,7 @@ class Attack:
                 break
 
         self.global_eval()
-        return (x, x_adv, loss_tracker)
+        return (x, x_adv, x_src, loss_tracker)
     
     def batch_eval(
             self, 
@@ -159,3 +159,64 @@ class Attack:
 
     def global_eval(self) -> None:
         self.evaluator.global_metrics()
+
+'''
+Implement other attack algos and use them as subclasses of the main Attack class
+'''
+class PGD(Attack):
+    def __init__(self, model, batch_size, device, eps):
+        super().__init__(model, batch_size, device)
+        self.eps = eps
+        
+    def attack_batch(
+            self,
+            src_img : torch.Tensor, 
+            target_img : torch.Tensor, 
+            optimizer : torch.optim.Optimizer, 
+            scheduler : torch.optim.lr_scheduler._LRScheduler, 
+            num_steps : int, 
+            mask : torch.Tensor = None
+        ) -> List:
+        # Count the number of batches that we have attacked
+        self.batch_num += 1
+
+        # Move images to the same device as the model
+        src_img = src_img.to(self.device)
+        target_img = target_img.to(self.device)
+        attack_img = target_img.clone().to(self.device)
+
+        #target_img = target_img + (torch.rand_like(target_img)).to(self.device)
+        mask = mask.to(self.device)
+        # Get the embedding of the source image and make a copy of the target
+        src_emb = self.model(src_img)['y_hat']
+
+        # Track the best performance
+        best_img = None
+        loss_tracker = StatsMeter()
+
+        pbar = tqdm(range(num_steps))
+        for iter in pbar:  
+            out = self.model(target_img)
+            target_emb = out['y_hat']
+            loss = self.criterion(src_emb, target_emb)
+            pbar.set_description(f"[Running attack]: Loss {loss.item()}")
+            optimizer.zero_grad()
+            target_img.grad, = torch.autograd.grad(loss, [target_img])
+            optimizer.step()
+            scheduler.step()
+            # Project perturbation onto the epsilon ball
+            with torch.no_grad():
+                perturbation = target_img - attack_img
+                perturbation = torch.clamp(perturbation, -self.eps, self.eps)
+                target_img.data = attack_img + perturbation
+            loss_tracker.update(loss.item())
+            if wandb_available:
+                wandb.log({
+                    f'Batch {self.batch_num} Loss': loss
+                })
+                
+            # Save the image that achieved the best performance
+            if loss.item() == loss_tracker.min:
+                best_img = target_img
+
+        return best_img, loss_tracker

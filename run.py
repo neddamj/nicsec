@@ -13,7 +13,7 @@ except ImportError:
     wandb = None
     wandb_available = False
 
-from attack import Attack
+from attack import Attack, PGD
 from compressor import NeuralCompressor, JpegCompressor
 
 # Disable TF32 Tensor Cores
@@ -43,6 +43,15 @@ def get_dataset(config, transform):
         raise ValueError("Invalid dataset. Use 'celeba' or 'imagenette'.")
     return dataset
 
+def get_attack_algo(config, compressor):
+    if config['algorithm'] == 'mgd':
+        attack = Attack(model=compressor, batch_size=config['batch_size'], device=device)
+    elif config['algorithm'] == 'pgd':
+        attack = PGD(model=compressor, batch_size=config['batch_size'], device=device, eps=0.9)
+    else:
+        raise ValueError("Invalid algorithm. Use 'mgd' or 'pgd'.")
+    return attack
+
 def setup_wandb(config, wandb_available):
     # Setup wandb logging
     if wandb_available:
@@ -62,23 +71,24 @@ def direct_attack(config):
     setup_wandb(config, wandb_available)
 
     x = dataset[0][0].unsqueeze(0).to(device)
-    attack = Attack(model=compressor, batch_size=config['batch_size'], device=device)
-    x_src, x_adv, loss_tracker =  attack.attack(x, dataloader, compressor, device, config)
-    return x_src, x_adv, loss_tracker
+    attack = get_attack_algo(config, compressor)
+    x_src, x_adv, x_target, loss_tracker =  attack.attack(x, dataloader, compressor, device, config)
+    return x_src, x_adv, x_target, loss_tracker
 
 if __name__ == '__main__':
     # Run the attack
     config = {
         'lr': 3e-2,
         'batch_size': 32,
-        'num_batches': 10,
-        'num_steps': 20000,
-        'image_size': 128,
-        'quality_factor': 8,
+        'num_batches': 3,
+        'num_steps': 5000,
+        'image_size': 256,
+        'quality_factor': 1,
         'mask_type': 'dot',
         'dataset': 'imagenette',        # 'celeba' or imagenette'
-        'compressor_type': 'neural',    # 'neural' or 'jpeg'
+        'compressor_type': 'neural',      # 'neural' or 'jpeg'
         'scheduler_type': 'cosine',     # 'lambda' or 'cosine
-        'model_id': 'my_bmshj2018_hyperprior'
+        'model_id': 'my_bmshj2018_factorized',
+        'algorithm': 'pgd'
     }
-    x_src, x_adv, _ = direct_attack(config)
+    x_src, x_adv, x_tar, _ = direct_attack(config)
