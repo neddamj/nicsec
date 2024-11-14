@@ -13,7 +13,7 @@ except ImportError:
     wandb = None
     wandb_available = False
 
-from attack import Attack, PGD
+from attack import MGD, PGD, CW
 from compressor import NeuralCompressor, JpegCompressor
 
 # Disable TF32 Tensor Cores
@@ -45,9 +45,11 @@ def get_dataset(config, transform):
 
 def get_attack_algo(config, compressor):
     if config['algorithm'] == 'mgd':
-        attack = Attack(model=compressor, batch_size=config['batch_size'], device=device)
+        attack = MGD(model=compressor, batch_size=config['batch_size'], device=device)
     elif config['algorithm'] == 'pgd':
-        attack = PGD(model=compressor, batch_size=config['batch_size'], device=device, eps=0.9)
+        attack = PGD(model=compressor, batch_size=config['batch_size'], device=device, eta=config['pgd']['eta'])
+    elif config['algorithm'] == 'cw':
+        attack = CW(model=compressor, batch_size=config['batch_size'], device=device, c=config['cw']['c'])
     else:
         raise ValueError("Invalid algorithm. Use 'mgd' or 'pgd'.")
     return attack
@@ -79,16 +81,21 @@ if __name__ == '__main__':
     # Run the attack
     config = {
         'lr': 3e-2,
-        'batch_size': 32,
-        'num_batches': 3,
+        'batch_size': 16,
+        'num_batches': 1,
         'num_steps': 5000,
-        'image_size': 256,
+        'image_size': 256, 
         'quality_factor': 1,
         'mask_type': 'dot',
         'dataset': 'imagenette',        # 'celeba' or imagenette'
         'compressor_type': 'neural',      # 'neural' or 'jpeg'
-        'scheduler_type': 'cosine',     # 'lambda' or 'cosine
         'model_id': 'my_bmshj2018_factorized',
-        'algorithm': 'pgd'
+        'algorithm': 'cw',
+        'pgd': {
+            'eta': 0.9
+        },
+        'cw': {
+            'c': 1.0
+        }
     }
     x_src, x_adv, x_tar, _ = direct_attack(config)

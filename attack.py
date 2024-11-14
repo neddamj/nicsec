@@ -9,7 +9,7 @@ from tqdm import tqdm
  
 from utils import StatsMeter
 from masks import ring_mask, box_mask, dot_mask
-from eval import MetricsEvaluator
+from evaluator import MetricsEvaluator
 try:
     import wandb
     wandb_available = True
@@ -31,6 +31,10 @@ class Attack:
 
         # Evaluation metrics
         self.evaluator = MetricsEvaluator(self.batch_size, use_wandb=wandb_available)
+
+        # optimizer and scheduler
+        self.optimizer = torch.optim.Adam
+        self.scheduler = CosineAnnealingLR
         
     def _init_mask(
             self,
@@ -55,22 +59,6 @@ class Attack:
             grad *= mask
         return grad
     
-    def _init_scheduler(
-            self,
-            config: Dict,
-            optimizer: torch.optim.Optimizer,
-            scale_factor : float = 0.1
-    ) -> torch.optim.lr_scheduler.LRScheduler:
-        scheduler_type = config['scheduler_type']
-        if scheduler_type == 'lambda':
-            lambda_lr = lambda iteration: scale_factor ** (iteration // (config['num_steps']/2))
-            scheduler = LambdaLR(optimizer, lr_lambda=lambda_lr)
-        elif scheduler_type == 'cosine':
-            scheduler = CosineAnnealingLR(optimizer, T_max=config['num_steps'] / 10)
-        else:
-            raise ValueError("Invalid scheduler type. Use 'cosine' or 'lambda'.")
-        return scheduler
-    
     def criterion(
             self,
             src_img: torch.Tensor, 
@@ -80,6 +68,48 @@ class Attack:
         cos_sim = F.cosine_similarity(src_img.view(1, -1), target_img.view(self.batch_size, -1), dim=1).mean()
         loss = mse + ((1 - cos_sim) / 2)
         return loss
+    
+    def attack(self, x, dataloader, net, device, config):
+        x_clone = x.clone()
+        for i, (x_hat, _) in enumerate(dataloader):
+            x_hat = x_hat.to(device)
+            x_src = x_hat.clone()
+            x_hat.requires_grad = True
+            mask = self._init_mask(x_hat, config['mask_type'])
+
+            optimizer = self.optimizer([x_hat], lr=config['lr'])
+            scheduler = self.scheduler(optimizer, T_max=config['num_steps'] / 10)
+            x_adv, loss_tracker = self.attack_batch(x, x_hat, optimizer=optimizer, scheduler=scheduler, config=config, mask=mask)
+            with torch.no_grad():
+                output = net(x_adv)['x_hat']
+
+            self.batch_eval(x_clone, x_adv, output)
+            if i == config['num_batches'] - 1:
+                break
+
+        self.global_eval()
+        return (x, x_adv, x_src, loss_tracker)
+    
+    def attack_batch(self):
+        raise NotImplementedError
+    
+    def batch_eval(
+            self, 
+            x: torch.Tensor, 
+            x_adv: torch.Tensor,
+            output: torch.Tensor,
+        ) -> None:
+        self.evaluator.evaluate_batch(x, x_adv, output, self.model)
+
+    def global_eval(self) -> None:
+        self.evaluator.global_metrics()
+
+'''
+Implement other attack algos and use them as subclasses of the main Attack class
+'''
+class MGD(Attack):
+    def __init__(self, model, batch_size, device):
+        super().__init__(model, batch_size, device)
 
     def attack_batch(
             self,
@@ -87,11 +117,12 @@ class Attack:
             target_img: torch.Tensor, 
             optimizer: torch.optim.Optimizer, 
             scheduler: torch.optim.lr_scheduler._LRScheduler, 
-            num_steps: int, 
+            config: Dict, 
             mask: torch.Tensor = None
         ) -> List:
         # Count the number of batches that we have attacked
         self.batch_num += 1
+        num_steps = config['num_steps']
 
         # Move images to the same device as the model
         src_img = src_img.to(self.device)
@@ -102,6 +133,7 @@ class Attack:
 
         # Track the best performance
         best_img = None
+        best_sr = 0
         loss_tracker = StatsMeter()
 
         pbar = tqdm(range(num_steps))
@@ -122,51 +154,19 @@ class Attack:
                 })
                 
             # Save the image that achieved the best performance
-            if loss.item() == loss_tracker.min:
-                best_img = target_img
+            if iter % 100 == 0:
+                s = self.evaluator.calculate_success_rate(src_img, target_img, self.model) / self.batch_size
+                if s >= best_sr:
+                    best_sr = s
+                    best_img = target_img.clone()
 
-        return best_img, loss_tracker
+        return best_img.clamp(0, 1), loss_tracker
     
-    def attack(self, x, dataloader, net, device, config):
-        x_clone = x.clone()
-        for i, (x_hat, _) in enumerate(dataloader):
-            x_hat = x_hat.to(device)
-            x_src = x_hat.clone()
-            x_hat.requires_grad = True
-            mask = self._init_mask(x_hat, config['mask_type'])
-
-            optimizer = torch.optim.Adam([x_hat], lr=config['lr'])
-            scheduler = self._init_scheduler(config, optimizer)
-            #torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config['num_steps'] / 10)
-            x_adv, loss_tracker = self.attack_batch(x, x_hat, optimizer=optimizer, scheduler=scheduler, num_steps=config['num_steps'], mask=mask)
-            with torch.no_grad():
-                output = net(x_adv)['x_hat']
-
-            self.batch_eval(x_clone, x_adv, output)
-            if i == config['num_batches'] - 1:
-                break
-
-        self.global_eval()
-        return (x, x_adv, x_src, loss_tracker)
-    
-    def batch_eval(
-            self, 
-            x: torch.Tensor, 
-            x_adv: torch.Tensor,
-            output: torch.Tensor,
-        ) -> None:
-        self.evaluator.evaluate_batch(x, x_adv, output, self.model)
-
-    def global_eval(self) -> None:
-        self.evaluator.global_metrics()
-
-'''
-Implement other attack algos and use them as subclasses of the main Attack class
-'''
 class PGD(Attack):
-    def __init__(self, model, batch_size, device, eps):
+    def __init__(self, model, batch_size, device, eta):
         super().__init__(model, batch_size, device)
-        self.eps = eps
+        self.eta = eta
+        self.optimizer = torch.optim.SGD
         
     def attack_batch(
             self,
@@ -174,11 +174,12 @@ class PGD(Attack):
             target_img : torch.Tensor, 
             optimizer : torch.optim.Optimizer, 
             scheduler : torch.optim.lr_scheduler._LRScheduler, 
-            num_steps : int, 
+            config : Dict, 
             mask : torch.Tensor = None
         ) -> List:
         # Count the number of batches that we have attacked
         self.batch_num += 1
+        num_steps = config['num_steps']
 
         # Move images to the same device as the model
         src_img = src_img.to(self.device)
@@ -192,6 +193,7 @@ class PGD(Attack):
 
         # Track the best performance
         best_img = None
+        best_sr = 0
         loss_tracker = StatsMeter()
 
         pbar = tqdm(range(num_steps))
@@ -202,12 +204,13 @@ class PGD(Attack):
             pbar.set_description(f"[Running attack]: Loss {loss.item()}")
             optimizer.zero_grad()
             target_img.grad, = torch.autograd.grad(loss, [target_img])
+            target_img.grad = target_img.grad.sign()    # Use the sign of the gradients
             optimizer.step()
             scheduler.step()
-            # Project perturbation onto the epsilon ball
+            # Project perturbation onto the eta ball
             with torch.no_grad():
                 perturbation = target_img - attack_img
-                perturbation = torch.clamp(perturbation, -self.eps, self.eps)
+                perturbation = torch.clamp(perturbation, -self.eta, self.eta)
                 target_img.data = attack_img + perturbation
             loss_tracker.update(loss.item())
             if wandb_available:
@@ -215,8 +218,92 @@ class PGD(Attack):
                     f'Batch {self.batch_num} Loss': loss
                 })
                 
-            # Save the image that achieved the best performance
-            if loss.item() == loss_tracker.min:
-                best_img = target_img
+            if iter % 100 == 0:
+                s = self.evaluator.calculate_success_rate(src_img, target_img, self.model) / self.batch_size
+                if s >= best_sr:
+                    best_sr = s
+                    best_img = target_img.clone()
 
+        return best_img.clamp(0, 1), loss_tracker
+
+class CW(Attack):
+    def __init__(self, model, batch_size, device, config):
+        super().__init__(model, batch_size, device)
+        self.c = config
+    
+    def criterion(
+            self,
+            src_x: torch.Tensor, 
+            target_x: torch.Tensor,
+            target_img: torch.Tensor, 
+            adv_img: torch.Tensor
+        ) -> torch.Tensor:
+        loss = F.mse_loss(src_x, target_x) + self.c * F.mse_loss(target_img, adv_img)
+        return loss
+    
+    def tanh_space(self, x):
+        return 1 / 2 * (torch.tanh(x) + 1)
+
+    def inverse_tanh_space(self, x):
+        # torch.atanh is only for torch >= 1.7.0
+        # atanh is defined in the range -1 to 1
+        def atanh(x):
+            return 0.5 * torch.log((1 + x) / (1 - x))
+        return atanh(torch.clamp(x * 2 - 1, min=-1, max=1))
+
+    def attack_batch(
+            self,
+            src_img : torch.Tensor, 
+            target_img : torch.Tensor, 
+            optimizer : torch.optim.Optimizer, 
+            scheduler : torch.optim.lr_scheduler._LRScheduler, 
+            config : Dict, 
+            mask : torch.Tensor = None
+        ) -> List:
+        # Count the number of batches that we have attacked
+        self.batch_num += 1
+        num_steps = config['num_steps']
+
+        # Move images to the same device as the model
+        src_img = src_img.to(self.device)
+        target_img = target_img.to(self.device)
+        attack_img = target_img.clone().to(self.device)
+
+        w = self.inverse_tanh_space(target_img).detach().requires_grad_()
+        optimizer = self.optimizer([w], lr=config['lr'])
+
+        #target_img = target_img + (torch.rand_like(target_img)).to(self.device)
+        mask = mask.to(self.device)
+        # Get the embedding of the source image and make a copy of the target
+        src_emb = self.model(src_img)['y_hat']
+
+        # Track the best performance
+        best_img = None
+        best_sr = 0
+        loss_tracker = StatsMeter()
+
+        pbar = tqdm(range(num_steps))
+        for iter in pbar:  
+            adv_imgs = self.tanh_space(w)
+
+            out = self.model(adv_imgs)
+            target_emb = out['y_hat']
+            loss = self.criterion(src_emb, target_emb, adv_imgs, attack_img)
+            pbar.set_description(f"[Running attack]: Loss {loss.item()}")
+            optimizer.zero_grad()
+            w.grad, = torch.autograd.grad(loss, [w])
+            optimizer.step()
+            scheduler.step()
+            loss_tracker.update(loss.item())
+            if wandb_available:
+                wandb.log({
+                    f'Batch {self.batch_num} Loss': loss
+                })
+                
+            if iter % 100 == 0:
+                s = self.evaluator.calculate_success_rate(src_img, adv_imgs, self.model) / self.batch_size
+                if s >= best_sr:
+                    best_sr = s
+                    best_img = adv_imgs.clone()
+        
         return best_img, loss_tracker
