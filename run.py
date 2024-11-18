@@ -22,7 +22,7 @@ torch.backends.cudnn.allow_tf32 = False
 
 device = 'cpu'
 if torch.cuda.is_available():
-    device = 'cuda:2'
+    device = 'cuda'
 elif torch.backends.mps.is_available():
     device = 'mps'
 
