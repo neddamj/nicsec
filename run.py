@@ -20,13 +20,11 @@ from compressor import NeuralCompressor, JpegCompressor
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
 
-device = 'cpu'
-if torch.cuda.is_available():
-    device = 'cuda'
-elif torch.backends.mps.is_available():
-    device = 'mps'
+device = torch.device("cuda" if torch.cuda.is_available() else 
+                      "mps" if torch.backends.mps.is_available() else 
+                      "cpu")
 
-def get_compressor(config, device):
+def get_compressor(config):
     if config['compressor_type'] == 'neural':
         return NeuralCompressor(model_id=config['model_id'], device=device)
     elif config['compressor_type'] == 'jpeg':
@@ -34,7 +32,12 @@ def get_compressor(config, device):
     else:
         raise ValueError("Invalid compressor type. Use 'neural' or 'jpeg'.")
     
-def get_dataset(config, transform):
+def get_dataset(config):
+    transform = transforms.Compose([
+        transforms.Resize((config['image_size'], config['image_size'])), 
+        transforms.ToTensor()
+        ])
+    
     if config['dataset'] == 'celeba':
         dataset = datasets.CelebA(root='./data', split='train', transform=transform, download=True)
     elif config['dataset'] == 'imagenette':
@@ -45,57 +48,47 @@ def get_dataset(config, transform):
 
 def get_attack_algo(config, compressor):
     if config['algorithm'] == 'mgd':
-        attack = MGD(model=compressor, batch_size=config['batch_size'], device=device)
+        attack = MGD(model=compressor, config=config, device=device)
     elif config['algorithm'] == 'pgd':
-        attack = PGD(model=compressor, batch_size=config['batch_size'], device=device, eta=config['pgd']['eta'])
+        attack = PGD(model=compressor, config=config, device=device)
     elif config['algorithm'] == 'cw':
-        attack = CW(model=compressor, batch_size=config['batch_size'], device=device, c=config['cw']['c'])
+        attack = CW(model=compressor, config=config, device=device)
     else:
         raise ValueError("Invalid algorithm. Use 'mgd' or 'pgd'.")
     return attack
 
-def setup_wandb(config, wandb_available):
-    # Setup wandb logging
+def setup_wandb(config):
     if wandb_available:
         wandb.init(project="neural-image-compression-attack")
         wandb.config.update(config)
 
 def direct_attack(config):
-    compressor = get_compressor(config, device)
-
-    transform = transforms.Compose([
-        transforms.Resize((config['image_size'], config['image_size'])), 
-        transforms.ToTensor()
-        ])
-    dataset = get_dataset(config, transform)
+    compressor = get_compressor(config)
+    dataset = get_dataset(config)
     dataloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=True, num_workers=4)
+    attack = get_attack_algo(config, compressor)
 
-    setup_wandb(config, wandb_available)
+    setup_wandb(config)
 
     x = dataset[0][0].unsqueeze(0).to(device)
-    attack = get_attack_algo(config, compressor)
-    x_src, x_adv, x_target, loss_tracker =  attack.attack(x, dataloader, compressor, device, config)
+    x_src, x_adv, x_target, loss_tracker =  attack.attack(x, dataloader, compressor, device)
     return x_src, x_adv, x_target, loss_tracker
 
 if __name__ == '__main__':
     # Run the attack
     config = {
         'lr': 3e-2,
-        'batch_size': 16,
+        'batch_size': 32,
         'num_batches': 1,
         'num_steps': 5000,
-        'image_size': 256, 
+        'image_size': 128, 
         'quality_factor': 1,
         'mask_type': 'dot',
         'dataset': 'imagenette',        # 'celeba' or imagenette'
-        'compressor_type': 'neural',      # 'neural' or 'jpeg'
+        'compressor_type': 'neural',    # 'neural' or 'jpeg'
         'model_id': 'my_bmshj2018_factorized',
         'algorithm': 'cw',
-        'pgd': {
-            'eta': 0.9
-        },
-        'cw': {
-            'c': 1.0
-        }
+        'pgd': {'eta': 0.9},
+        'cw': {'c': 1.0}
     }
     x_src, x_adv, x_tar, _ = direct_attack(config)

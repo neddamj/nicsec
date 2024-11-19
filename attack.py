@@ -1,10 +1,12 @@
 import warnings
+
+import torch.utils
 warnings.filterwarnings("ignore")
 
 import torch
 import torch.nn.functional as F
-from torch.optim.lr_scheduler import LambdaLR, CosineAnnealingLR
-from typing import List, Dict
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from typing import List, Dict, Tuple
 from tqdm import tqdm
  
 from utils import StatsMeter
@@ -21,13 +23,14 @@ class Attack:
     def __init__(
             self, 
             model: torch.nn.Module, 
-            batch_size: int,
+            config: Dict,
             device: str
         ):
         self.model = model
-        self.batch_size = batch_size
+        self.batch_size = config['batch_size']
         self.device = device
         self.batch_num = 0
+        self.config = config
 
         # Evaluation metrics
         self.evaluator = MetricsEvaluator(self.batch_size, use_wandb=wandb_available)
@@ -36,7 +39,7 @@ class Attack:
             self,
             image: torch.Tensor,
             mask_type: str = 'dot',
-        ) -> None:
+        ) -> torch.Tensor:
         if mask_type == 'box':
             mask = box_mask()
         elif mask_type == 'ring':
@@ -50,7 +53,7 @@ class Attack:
             mask = dot_mask(image, vertical_skip=vertical_skip, horizontal_skip=horizontal_skip)
         return mask
     
-    def apply_gradient_mask(self, grad: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    def _apply_gradient_mask(self, grad: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         if mask is not None:
             grad *= mask
         return grad
@@ -65,19 +68,25 @@ class Attack:
         loss = mse + ((1 - cos_sim) / 2)
         return loss
     
-    def attack(self, x, dataloader, net, device, config):
+    def attack(
+            self, 
+            x: torch.Tensor, 
+            dataloader: torch.utils.data.DataLoader, 
+            net: torch.nn.Module, 
+            device: torch.device
+            ) -> Tuple:
         x_clone = x.clone()
         for i, (x_hat, _) in enumerate(dataloader):
             x_hat = x_hat.to(device)
             x_src = x_hat.clone()
             x_hat.requires_grad = True
-            mask = self._init_mask(x_hat, config['mask_type'])
-            x_adv, loss_tracker = self.attack_batch(x, x_hat, config=config, mask=mask)
+            mask = self._init_mask(x_hat, self.config['mask_type']) if self.config['algorithm'] == 'mgd' else None
+            x_adv, loss_tracker = self.attack_batch(x, x_hat, mask=mask)
             with torch.no_grad():
                 output = net(x_adv)['x_hat']
 
             self.batch_eval(x_clone, x_adv, output)
-            if i == config['num_batches'] - 1:
+            if i == self.config['num_batches'] - 1:
                 break
 
         self.global_eval()
@@ -98,30 +107,27 @@ class Attack:
         self.evaluator.global_metrics()
 
 class MGD(Attack):
-    def __init__(self, model, batch_size, device):
-        super().__init__(model, batch_size, device)
-
     def attack_batch(
             self,
             src_img: torch.Tensor, 
-            target_img: torch.Tensor, 
-            config: Dict, 
+            target_img: torch.Tensor,
             mask: torch.Tensor = None
-        ) -> List:
+        ) -> Tuple:
         # Count the number of batches that we have attacked
         self.batch_num += 1
-        num_steps = config['num_steps']
+        num_steps = self.config['num_steps']
 
         # Move images to the same device as the model
         src_img = src_img.to(self.device)
         target_img = target_img.to(self.device)
-        mask = mask.to(self.device)
+        if mask is not None:
+            mask = mask.to(self.device)
         # Get the embedding of the source image and make a copy of the target
         src_emb = self.model(src_img)['y_hat']
 
         # Setup the optimizer and LR scheuler
-        optimizer = torch.optim.Adam([target_img], lr=config['lr'])
-        scheduler = CosineAnnealingLR(optimizer, T_max=config['num_steps'] / 10)
+        optimizer = torch.optim.Adam([target_img], lr=self.config['lr'])
+        scheduler = CosineAnnealingLR(optimizer, T_max=self.config['num_steps'] / 10)
 
         # Track the best performance
         best_img = None
@@ -136,7 +142,7 @@ class MGD(Attack):
             pbar.set_description(f"[Running attack]: Loss {loss.item()}")
             optimizer.zero_grad()
             target_img.grad, = torch.autograd.grad(loss, [target_img])
-            target_img.grad = self.apply_gradient_mask(target_img.grad, mask)
+            target_img.grad = self._apply_gradient_mask(target_img.grad, mask)
             optimizer.step()
             scheduler.step()
             loss_tracker.update(loss.item())
@@ -152,35 +158,36 @@ class MGD(Attack):
                     best_sr = s
                     best_img = target_img.clone()
 
-        return best_img.clamp(0, 1), loss_tracker
+        return best_img, loss_tracker
     
 class PGD(Attack):
-    def __init__(self, model, batch_size, device, eta):
-        super().__init__(model, batch_size, device)
-        self.eta = eta
+    def __init__(self, model, config, device):
+        super().__init__(model, config, device)
+        self.eta = config['pgd']['eta']
         
     def attack_batch(
             self,
             src_img : torch.Tensor, 
             target_img : torch.Tensor, 
-            config : Dict, 
             mask : torch.Tensor = None
-        ) -> List:
+        ) -> Tuple:
         # Count the number of batches that we have attacked
         self.batch_num += 1
-        num_steps = config['num_steps']
+        num_steps = self.config['num_steps']
 
         # Move images to the same device as the model
         src_img = src_img.to(self.device)
         target_img = target_img.to(self.device)
         attack_img = target_img.clone().to(self.device)
+        if mask is not None:
+            mask = mask.to(self.device)
 
         # Get the embedding of the source image and make a copy of the target
         src_emb = self.model(src_img)['y_hat']
 
         # Setup the optimizer and LR scheuler
-        optimizer = torch.optim.SGD([target_img], lr=config['lr'])
-        scheduler = CosineAnnealingLR(optimizer, T_max=config['num_steps'] / 10)
+        optimizer = torch.optim.SGD([target_img], lr=self.config['lr'])
+        scheduler = CosineAnnealingLR(optimizer, T_max=self.config['num_steps'] / 10)
 
         # Track the best performance
         best_img = None
@@ -215,12 +222,12 @@ class PGD(Attack):
                     best_sr = s
                     best_img = target_img.clone()
 
-        return best_img.clamp(0, 1), loss_tracker
+        return best_img, loss_tracker
 
 class CW(Attack):
-    def __init__(self, model, batch_size, device, c):
-        super().__init__(model, batch_size, device)
-        self.c = c
+    def __init__(self, model, config, device):
+        super().__init__(model, config, device)
+        self.c = config['cw']['c']
     
     def criterion(
             self,
@@ -232,36 +239,35 @@ class CW(Attack):
         loss = F.mse_loss(src_x, target_x) + self.c * F.mse_loss(target_img, adv_img)
         return loss
     
-    def tanh_space(self, x):
+    def tanh_space(self, x: torch.Tensor) -> torch.Tensor:
         return 1 / 2 * (torch.tanh(x) + 1)
 
-    def inverse_tanh_space(self, x):
+    def inverse_tanh_space(self, x: torch.Tensor) -> torch.Tensor:
         return torch.atanh(torch.clamp(x * 2 - 1, min=-1, max=1))
 
     def attack_batch(
             self,
             src_img : torch.Tensor, 
-            target_img : torch.Tensor, 
-            config : Dict, 
+            target_img : torch.Tensor,
             mask : torch.Tensor = None
-        ) -> List:
+        ) -> Tuple:
         # Count the number of batches that we have attacked
         self.batch_num += 1
-        num_steps = config['num_steps']
+        num_steps = self.config['num_steps']
 
         # Move images to the same device as the model
         src_img = src_img.to(self.device)
         target_img = target_img.to(self.device)
         attack_img = target_img.clone().to(self.device)
+        if mask is not None:
+            mask = mask.to(self.device)
         # Project the image into inv tanh space
         w = self.inverse_tanh_space(target_img).detach().requires_grad_()
 
         # Setup the optimizer and LR scheuler
-        optimizer = torch.optim.Adam([w], lr=config['lr'])
-        scheduler = CosineAnnealingLR(optimizer, T_max=config['num_steps'] / 10)
+        optimizer = torch.optim.Adam([w], lr=self.config['lr'])
+        scheduler = CosineAnnealingLR(optimizer, T_max=self.config['num_steps'] / 10)
 
-        #target_img = target_img + (torch.rand_like(target_img)).to(self.device)
-        mask = mask.to(self.device)
         # Get the embedding of the source image and make a copy of the target
         src_emb = self.model(src_img)['y_hat']
 
@@ -293,4 +299,4 @@ class CW(Attack):
                     best_sr = s
                     best_img = adv_imgs.clone()
         
-        return best_img.clamp(0, 1), loss_tracker
+        return best_img, loss_tracker
