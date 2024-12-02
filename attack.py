@@ -27,7 +27,7 @@ class Attack:
             device: str
         ):
         self.model = model
-        self.batch_size = config['batch_size']
+        self.batch_size = 24 if config['dataset'] == 'kodak' else config['batch_size']
         self.device = device
         self.batch_num = 0
         self.config = config
@@ -128,7 +128,7 @@ class MGD(Attack):
         # Setup the optimizer and LR scheuler
         optimizer = torch.optim.Adam([target_img], lr=self.config['lr'])
         scheduler = CosineAnnealingLR(optimizer, T_max=self.config['num_steps'] / 10)
-
+        
         # Track the best performance
         best_img = None
         best_sr = 0

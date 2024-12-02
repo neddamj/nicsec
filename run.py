@@ -14,6 +14,7 @@ except ImportError:
     wandb_available = False
 
 from attack import MGD, PGD, CW
+from datasets import KodakDataset
 from compressor import NeuralCompressor, JpegCompressor
 
 # Disable TF32 Tensor Cores
@@ -26,7 +27,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else
 
 def get_compressor(config):
     if config['compressor_type'] == 'neural':
-        return NeuralCompressor(model_id=config['model_id'], device=device)
+        return NeuralCompressor(model_id=config['model_id'], quality_factor=config['quality_factor'], device=device)
     elif config['compressor_type'] == 'jpeg':
         return JpegCompressor(differentiable=True, quality_factor=config['quality_factor'], image_size=config['image_size'], device=device)
     else:
@@ -42,6 +43,8 @@ def get_dataset(config):
         dataset = datasets.CelebA(root='./data', split='train', transform=transform, download=True)
     elif config['dataset'] == 'imagenette':
         dataset = datasets.Imagenette(root='./data', split='train', transform=transform)
+    elif config['dataset'] == 'kodak':
+        dataset = KodakDataset( root = 'data/kodak', transform=transform)
     else:
         raise ValueError("Invalid dataset. Use 'celeba' or 'imagenette'.")
     return dataset
@@ -65,7 +68,8 @@ def setup_wandb(config):
 def direct_attack(config):
     compressor = get_compressor(config)
     dataset = get_dataset(config)
-    dataloader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=True, num_workers=4)
+    batch_size = 24 if config['dataset'] == 'kodak' else config['batch_size']
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=4)
     attack = get_attack_algo(config, compressor)
 
     setup_wandb(config)
@@ -79,16 +83,16 @@ if __name__ == '__main__':
     config = {
         'lr': 3e-2,
         'batch_size': 32,
-        'num_batches': 1,
+        'num_batches': 10,
         'num_steps': 5000,
-        'image_size': 128, 
+        'image_size': 256, 
         'quality_factor': 1,
         'mask_type': 'dot',
-        'dataset': 'imagenette',        # 'celeba' or imagenette'
+        'dataset': 'kodak',        # 'celeba', imagenette' or 'kodak'
         'compressor_type': 'neural',    # 'neural' or 'jpeg'
         'model_id': 'my_bmshj2018_factorized',
-        'algorithm': 'cw',
-        'pgd': {'eta': 0.9},
+        'algorithm': 'mgd',
+        'pgd': {'eta': 0.1},
         'cw': {'c': 1.0}
     }
     x_src, x_adv, x_tar, _ = direct_attack(config)

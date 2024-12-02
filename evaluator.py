@@ -3,7 +3,7 @@ warnings.filterwarnings("ignore")
 
 import torch
 import torch.nn.functional as F
-from pytorch_msssim import ssim
+from pytorch_msssim import ssim, ms_ssim
 from typing import List, Dict
 try:
     import wandb
@@ -48,7 +48,7 @@ class MetricsEvaluator:
         return psnr
 
     def _ssim(self, img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
-        return ssim(img1, img2.unsqueeze(0), data_range=1.0)
+        return ms_ssim(img1, img2.unsqueeze(0), data_range=1.0)
 
     def _l2_norm(self, img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
         """
