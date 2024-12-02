@@ -6,8 +6,6 @@ from load_compression_models import (
     my_bmshj2018_factorized, 
     my_bmshj2018_factorized_relu,
     my_bmshj2018_hyperprior,
-    my_cheng2020_anchor,
-    my_cheng2020_attn,
     my_mbt2018,
     my_mbt2018_mean
 )
@@ -23,8 +21,6 @@ class NeuralCompressor:
             'my_bmshj2018_factorized_relu': my_bmshj2018_factorized_relu(quality=quality_factor, pretrained=True),
             'my_bmshj2018_factorized'     : my_bmshj2018_factorized(quality=quality_factor, pretrained=True),
             'my_bmshj2018_hyperprior'     : my_bmshj2018_hyperprior(quality=quality_factor, pretrained=True),
-            'my_cheng2020_anchor'         : my_cheng2020_anchor(quality=quality_factor, pretrained=True),
-            'my_cheng2020_attn'           : my_cheng2020_attn(quality=quality_factor, pretrained=True),
             'my_mbt2018'                  : my_mbt2018(quality=quality_factor, pretrained=True).train(),
             'my_mbt2018_mean'             : my_mbt2018_mean(quality=quality_factor, pretrained=True)
         }

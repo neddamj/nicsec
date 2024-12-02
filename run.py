@@ -1,6 +1,7 @@
 import warnings
 warnings.filterwarnings("ignore")
 
+import json
 import torch
 import torch.nn.functional as F
 from torchvision import datasets, transforms
@@ -21,9 +22,14 @@ from compressor import NeuralCompressor, JpegCompressor
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
 
-device = torch.device("cuda" if torch.cuda.is_available() else 
+device = torch.device("cuda:1" if torch.cuda.is_available() else 
                       "mps" if torch.backends.mps.is_available() else 
                       "cpu")
+
+def load_configs(json_path):
+    with open(json_path, 'r') as f:
+        configs = json.load(f)
+    return configs
 
 def get_compressor(config):
     if config['compressor_type'] == 'neural':
@@ -63,7 +69,7 @@ def get_attack_algo(config, compressor):
 def setup_wandb(config):
     if wandb_available:
         wandb.init(project="neural-image-compression-attack")
-        wandb.config.update(config)
+        wandb.config.update(config, allow_val_change=True)
 
 def direct_attack(config):
     compressor = get_compressor(config)
@@ -76,23 +82,25 @@ def direct_attack(config):
 
     x = dataset[0][0].unsqueeze(0).to(device)
     x_src, x_adv, x_target, loss_tracker =  attack.attack(x, dataloader, compressor, device)
+
+    if wandb_available:
+        wandb.finish()
+
     return x_src, x_adv, x_target, loss_tracker
 
+def run_experiments(configs):
+    for i, config in enumerate(configs):
+        print(f"Running experiment {i + 1}/{len(configs)}")
+        try:
+            x_src, x_adv, x_tar, _ = direct_attack(config)
+            print(f"Experiment {i + 1} completed successfully.\n\n")
+        except Exception as e:
+            print(f"Experiment {i + 1} failed with error: {e}\n\n")
+
 if __name__ == '__main__':
-    # Run the attack
-    config = {
-        'lr': 3e-2,
-        'batch_size': 32,
-        'num_batches': 10,
-        'num_steps': 5000,
-        'image_size': 256, 
-        'quality_factor': 1,
-        'mask_type': 'dot',
-        'dataset': 'kodak',        # 'celeba', imagenette' or 'kodak'
-        'compressor_type': 'neural',    # 'neural' or 'jpeg'
-        'model_id': 'my_bmshj2018_factorized',
-        'algorithm': 'mgd',
-        'pgd': {'eta': 0.1},
-        'cw': {'c': 1.0}
-    }
-    x_src, x_adv, x_tar, _ = direct_attack(config)
+    # Load the run config
+    config_file = 'configs.json'
+    experiment_configs = load_configs(config_file)
+
+    # Run all experiments
+    run_experiments(experiment_configs)
