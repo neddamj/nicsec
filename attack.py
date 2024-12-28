@@ -51,6 +51,12 @@ class Attack:
             vertical_skip = 2 
             horizontal_skip = 2
             mask = dot_mask(image, vertical_skip=vertical_skip, horizontal_skip=horizontal_skip)
+        elif mask_type == 'learned':
+            # Initialize the mask as a learnable parameter
+            vertical_skip = 2 
+            horizontal_skip = 2
+            mask = dot_mask(image, vertical_skip=vertical_skip, horizontal_skip=horizontal_skip)
+            mask = torch.nn.Parameter(torch.tensor(mask.detach().cpu().numpy()).detach().to(self.device)) # convert tensor into leaf node
         return mask
     
     def _apply_gradient_mask(self, grad: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -80,7 +86,11 @@ class Attack:
             x_hat = x_hat.to(device)
             x_src = x_hat.clone()
             x_hat.requires_grad = True
-            mask = self._init_mask(x_hat, self.config['mask_type']) if self.config['algorithm'] == 'mgd' else None
+            if self.config['algorithm'] == 'mgd' or self.config['algorithm'] == 'lmgd':
+                mask = self._init_mask(x_hat, self.config['mask_type']) 
+            else:
+                mask = None
+
             x_adv, loss_tracker = self.attack_batch(x, x_hat, mask=mask)
             with torch.no_grad():
                 output = net(x_adv)['x_hat']
@@ -144,6 +154,67 @@ class MGD(Attack):
             target_img.grad, = torch.autograd.grad(loss, [target_img])
             target_img.grad = self._apply_gradient_mask(target_img.grad, mask)
             optimizer.step()
+            scheduler.step()
+            loss_tracker.update(loss.item())
+            if wandb_available:
+                wandb.log({
+                    f'Batch {self.batch_num} Loss': loss
+                })
+                
+            # Save the image that achieved the best performance
+            if iter % 100 == 0:
+                s = self.evaluator.calculate_success_rate(src_img, target_img, self.model) / self.batch_size
+                if s >= best_sr:
+                    best_sr = s
+                    best_img = target_img.clone()
+
+        return best_img, loss_tracker
+    
+class LMGD(Attack):
+    def criterion(self, src_img, target_img, mask):
+        img_loss = super().criterion(src_img, target_img)
+        mask_loss = torch.norm(mask, p=1) / mask.numel()
+        return img_loss + self.config.get('sparsity_weight', 1e-3) * mask_loss
+    
+    def attack_batch(
+            self,
+            src_img: torch.Tensor, 
+            target_img: torch.Tensor,
+            mask: torch.Tensor = None
+        ) -> Tuple:
+        # Count the number of batches that we have attacked
+        self.batch_num += 1
+        num_steps = self.config['num_steps']
+
+        # Move images to the same device as the model
+        src_img = src_img.to(self.device)
+        target_img = target_img.to(self.device)
+        #if mask is not None:
+        #    mask = mask.to(self.device)
+        # Get the embedding of the source image and make a copy of the target
+        src_emb = self.model(src_img)['y_hat']
+
+        # Setup the optimizer and LR scheuler
+        optimizer = torch.optim.Adam([target_img], lr=self.config['lr'])
+        mask_optimizer = torch.optim.Adam([mask], lr=self.config['lmgd']['lr'])
+        scheduler = CosineAnnealingLR(optimizer, T_max=self.config['num_steps'] / 10)
+        # Track the best performance
+        best_img = None
+        best_sr = 0
+        loss_tracker = StatsMeter()
+
+        pbar = tqdm(range(num_steps))
+        for iter in pbar:  
+            out = self.model(target_img)
+            target_emb = out['y_hat']
+            loss = self.criterion(src_emb, target_emb, mask)
+            pbar.set_description(f"[Running attack]: Loss {loss.item()}")
+            optimizer.zero_grad()
+            target_img.grad, mask.grad = torch.autograd.grad(loss, [target_img, mask])
+            target_img.grad = self._apply_gradient_mask(target_img.grad, torch.round(mask))
+            #mask.grad, = torch.autograd.grad(loss, [mask])
+            optimizer.step()
+            mask_optimizer.step()
             scheduler.step()
             loss_tracker.update(loss.item())
             if wandb_available:
