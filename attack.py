@@ -43,17 +43,17 @@ class Attack:
         if mask_type == 'box':
             mask = box_mask()
         elif mask_type == 'ring':
-            num_rings = 50
+            num_rings = 100
             ring_width = 1
-            ring_separation = 5
+            ring_separation = 2
             mask = ring_mask(image, num_rings=num_rings, ring_width=ring_width, ring_separation=ring_separation)
         elif mask_type == 'dot':
             vertical_skip = 2 
-            horizontal_skip = 2
+            horizontal_skip = 1
             mask = dot_mask(image, vertical_skip=vertical_skip, horizontal_skip=horizontal_skip)
         elif mask_type == 'learned':
             # Initialize the mask as a learnable parameter
-            vertical_skip = 2 
+            vertical_skip = 3 
             horizontal_skip = 2
             mask = dot_mask(image, vertical_skip=vertical_skip, horizontal_skip=horizontal_skip)
             mask = torch.nn.Parameter(torch.tensor(mask.detach().cpu().numpy()).detach().to(self.device)) # convert tensor into leaf node
@@ -66,13 +66,12 @@ class Attack:
     
     def criterion(
             self,
-            src_img: torch.Tensor, 
-            target_img: torch.Tensor
+            src_emb: torch.Tensor, 
+            target_emb: torch.Tensor,
         ) -> torch.Tensor:
-        mse = F.mse_loss(src_img, target_img) 
-        cos_sim = F.cosine_similarity(src_img.view(1, -1), target_img.view(self.batch_size, -1), dim=1).mean()
-        loss = mse + ((1 - cos_sim) / 2)
-        return loss
+        mse = F.mse_loss(src_emb, target_emb) 
+        cos_sim = F.cosine_similarity(src_emb.view(1, -1), target_emb.view(self.batch_size, -1), dim=1).mean()
+        return mse + ((1 - cos_sim) / 2)
     
     def attack(
             self, 
@@ -86,7 +85,7 @@ class Attack:
             x_hat = x_hat.to(device)
             x_src = x_hat.clone()
             x_hat.requires_grad = True
-            if self.config['algorithm'] == 'mgd' or self.config['algorithm'] == 'lmgd':
+            if self.config['algorithm'] == 'mgd' or self.config['algorithm'] == 'cw':
                 mask = self._init_mask(x_hat, self.config['mask_type']) 
             else:
                 mask = None
@@ -95,7 +94,7 @@ class Attack:
             with torch.no_grad():
                 output = net(x_adv)['x_hat']
 
-            self.batch_eval(x_clone, x_adv, output)
+            self.batch_eval(x_hat, x_clone, x_adv, output)
             if i == self.config['num_batches'] - 1:
                 break
 
@@ -108,10 +107,11 @@ class Attack:
     def batch_eval(
             self, 
             x: torch.Tensor, 
+            x_target: torch.Tensor,
             x_adv: torch.Tensor,
             output: torch.Tensor,
         ) -> None:
-        self.evaluator.evaluate_batch(x, x_adv, output, self.model)
+        self.evaluator.evaluate_batch(x, x_target, x_adv, output, self.model)
 
     def global_eval(self) -> None:
         self.evaluator.global_metrics()
@@ -163,7 +163,7 @@ class MGD(Attack):
                 
             # Save the image that achieved the best performance
             if iter % 100 == 0:
-                s = self.evaluator.calculate_success_rate(src_img, target_img, self.model) / self.batch_size
+                s = self.evaluator.calculate_success_rate(src_img, target_img, self.model)
                 if s >= best_sr:
                     best_sr = s
                     best_img = target_img.clone()
@@ -330,8 +330,6 @@ class CW(Attack):
         src_img = src_img.to(self.device)
         target_img = target_img.to(self.device)
         attack_img = target_img.clone().to(self.device)
-        if mask is not None:
-            mask = mask.to(self.device)
         # Project the image into inv tanh space
         w = self.inverse_tanh_space(target_img).detach().requires_grad_()
 
