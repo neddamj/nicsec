@@ -19,18 +19,38 @@ class MetricsEvaluator:
 
         # Metrics storage
         self.success_rates = []
-        self.l2_distances = []
-        self.ssim_values = []
-        self.psnr_values = []
+        self.input_l2_distances = []
+        self.input_ssim_values = []
+        self.input_psnr_values = []
+        self.output_l2_distances = []
+        self.output_ssim_values = []
+        self.output_psnr_values = []
 
-    def calculate_metrics(self, img1: torch.Tensor, img2: torch.Tensor) -> Dict:
+    def calculate_input_metrics(self, img1: torch.Tensor, img2: torch.Tensor) -> Dict:
         """
         Calculate PSNR, SSIM, and L2 distance between img1 and img2 (batch-wise).
         """
         normalized_l2_distances = []
         structural_similarities = []
         psnr_values = []
+        for i in range(self.batch_size):
+            normalized_l2_distances.append(self._l2_norm(img1[i].unsqueeze(0), img2[i]))
+            structural_similarities.append(self._ssim(img1[i].unsqueeze(0), img2[i]))
+            psnr_values.append(self._psnr(img1[i].unsqueeze(0), img2[i]))
         
+        return {
+            'l2': torch.tensor(normalized_l2_distances).mean(),
+            'ssim': torch.tensor(structural_similarities).mean(),
+            'psnr': torch.tensor(psnr_values).mean()
+        }
+    
+    def calculate_output_metrics(self, img1: torch.Tensor, img2: torch.Tensor) -> Dict:
+        """
+        Calculate PSNR, SSIM, and L2 distance between img1 and img2 (batch-wise).
+        """
+        normalized_l2_distances = []
+        structural_similarities = []
+        psnr_values = []
         for i in range(self.batch_size):
             normalized_l2_distances.append(self._l2_norm(img1, img2[i]))
             structural_similarities.append(self._ssim(img1, img2[i]))
@@ -56,65 +76,80 @@ class MetricsEvaluator:
         """
         return torch.norm(img1 - img2) / img1.numel()
 
-    def evaluate_batch(self, src_img: torch.Tensor, adv_imgs: torch.Tensor, output: torch.Tensor, model: torch.nn.Module) -> None:
+    def evaluate_batch(self, src_img: torch.Tensor, target_img: torch.Tensor, adv_imgs: torch.Tensor, output: torch.Tensor, model: torch.nn.Module) -> None:
         """
         Evaluate a batch and store the success rate and calculated metrics.
         """
         # Calculate success rate
-        success_rate = self.calculate_success_rate(src_img, adv_imgs, model)
+        success_rate = self.calculate_success_rate(target_img, adv_imgs, model)
         self.success_rates.append(success_rate)
 
-        # Calculate PSNR, SSIM, and L2
-        metrics = self.calculate_metrics(src_img, output)
-        self.l2_distances.append(metrics['l2'])
-        self.ssim_values.append(metrics['ssim'])
-        self.psnr_values.append(metrics['psnr'])
+        # Calculate PSNR, SSIM, and L2 between the decompressed images and the target_img
+        output_metrics = self.calculate_output_metrics(target_img, output)
+        self.output_l2_distances.append(output_metrics['l2'])
+        self.output_ssim_values.append(output_metrics['ssim'])
+        self.output_psnr_values.append(output_metrics['psnr'])
+
+        # Calculate PSNR, SSIM, and L2 between the adv images and the src_imgs
+        input_metrics = self.calculate_input_metrics(src_img, adv_imgs)
+        self.input_l2_distances.append(input_metrics['l2'])
+        self.input_ssim_values.append(input_metrics['ssim'])
+        self.input_psnr_values.append(input_metrics['psnr'])
 
         # Log batch-wise metrics to wandb
         if self.use_wandb:
             wandb.log({
                 'batch_success_rate': success_rate / self.batch_size,
-                'batch_l2': metrics['l2'].item(),
-                'batch_ssim': metrics['ssim'].item(),
-                'batch_psnr': metrics['psnr'].item()
+                'input_batch_l2': input_metrics['l2'].item(),
+                'input_batch_ssim': input_metrics['ssim'].item(),
+                'input_batch_psnr': input_metrics['psnr'].item(),
+                'output_batch_l2': output_metrics['l2'].item(),
+                'output_batch_ssim': output_metrics['ssim'].item(),
+                'output_batch_psnr': output_metrics['psnr'].item()
             })
         else:
-            print(f"BATCH METRICS\nSuccess: {success_rate}/{self.batch_size}\nNormalized L2 Dist: {metrics['l2']}\nSSIM: {metrics['ssim']}\nPSNR: {metrics['psnr']}\n")
+            print(f"BATCH METRICS\nSuccess: {success_rate}/{self.batch_size}\nNormalized L2 Dist: {output_metrics['l2']}\nSSIM: {output_metrics['ssim']}\nPSNR: {output_metrics['psnr']}\n")
 
     def global_metrics(self) -> None:
         """
         Calculate and print the global average of success rate, PSNR, SSIM, and L2 distance.
         """
         asr = self._calculate_global_average(self.success_rates) / self.batch_size
-        l2 = self._calculate_global_average(self.l2_distances)
-        ssim = self._calculate_global_average(self.ssim_values)
-        psnr = self._calculate_global_average(self.psnr_values)
+        input_l2 = self._calculate_global_average(self.input_l2_distances)
+        input_ssim = self._calculate_global_average(self.input_ssim_values)
+        input_psnr = self._calculate_global_average(self.input_psnr_values)
+        output_l2 = self._calculate_global_average(self.output_l2_distances)
+        output_ssim = self._calculate_global_average(self.output_ssim_values)
+        output_psnr = self._calculate_global_average(self.output_psnr_values)
 
         # Log global metrics to wandb
         if self.use_wandb:
             wandb.log({
                 'global_asr': asr,
-                'global_l2': l2,
-                'global_ssim': ssim,
-                'global_psnr': psnr
+                'output_global_l2': output_l2,
+                'output_global_ssim': output_ssim,
+                'output_global_psnr': output_psnr,
+                'input_global_l2': input_l2,
+                'input_global_ssim': input_ssim,
+                'input_global_psnr': input_psnr
             })
         else:
-            print(f"\nGLOBAL METRICS\nASR: {asr}\nNormalized L2 Dist: {l2}\nSSIM: {ssim}\nPSNR: {psnr}")
+            print(f"\nGLOBAL METRICS\nASR: {asr}\nNormalized L2 Dist: {output_l2}\nSSIM: {output_ssim}\nPSNR: {output_psnr}")
 
-    def calculate_success_rate(self, src_img: torch.Tensor, adv_imgs: torch.Tensor, model: torch.nn.Module) -> int:
+    def calculate_success_rate(self, target_img: torch.Tensor, adv_imgs: torch.Tensor, model: torch.nn.Module) -> int:
         """
         Calculate the success rate of the attack by measuring the hamming distance between the compressed
-        versions of src_img and adv_imgs.
+        versions of target_img and adv_imgs.
         """
         success = 0
         with torch.no_grad():
-            src_bytes = model.compress(src_img)['strings'][0][0]
+            target_bytes = model.compress(target_img)['strings'][0][0]
             adv_bytes_list = model.compress(adv_imgs)['strings'][0]
         for adv_bytes in adv_bytes_list:
             hamming_dist = 0
-            if len(adv_bytes) != len(src_bytes):
+            if len(adv_bytes) != len(target_bytes):
                 continue
-            for x_byte, adv_byte in zip(src_bytes, adv_bytes):
+            for x_byte, adv_byte in zip(target_bytes, adv_bytes):
                 hamming_dist += bin(x_byte ^ adv_byte).count('1')
             if hamming_dist == 0:
                 success += 1
