@@ -84,13 +84,13 @@ class MetricsEvaluator:
         success_rate = self.calculate_success_rate(target_img, adv_imgs, model)
         self.success_rates.append(success_rate)
 
-        # Calculate PSNR, SSIM, and L2 between the decompressed images and the target_img
-        output_metrics = self.calculate_output_metrics(target_img, output)
+        # Calculate PSNR, SSIM, and L2 between the adv images and the target image
+        output_metrics = self.calculate_output_metrics(target_img, adv_imgs)
         self.output_l2_distances.append(output_metrics['l2'])
         self.output_ssim_values.append(output_metrics['ssim'])
         self.output_psnr_values.append(output_metrics['psnr'])
 
-        # Calculate PSNR, SSIM, and L2 between the adv images and the src_imgs
+        # Calculate PSNR, SSIM, and L2 between the adv images and the source image
         input_metrics = self.calculate_input_metrics(src_img, adv_imgs)
         self.input_l2_distances.append(input_metrics['l2'])
         self.input_ssim_values.append(input_metrics['ssim'])

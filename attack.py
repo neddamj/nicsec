@@ -48,13 +48,13 @@ class Attack:
             ring_separation = 2
             mask = ring_mask(image, num_rings=num_rings, ring_width=ring_width, ring_separation=ring_separation)
         elif mask_type == 'dot':
-            vertical_skip = 2 
-            horizontal_skip = 1
+            vertical_skip = self.config['mgd']['vertical_skip'] 
+            horizontal_skip = self.config['mgd']['horizontal_skip'] 
             mask = dot_mask(image, vertical_skip=vertical_skip, horizontal_skip=horizontal_skip)
         elif mask_type == 'learned':
             # Initialize the mask as a learnable parameter
-            vertical_skip = 3 
-            horizontal_skip = 2
+            vertical_skip = self.config['mgd']['vertical_skip'] 
+            horizontal_skip = self.config['mgd']['horizontal_skip'] 
             mask = dot_mask(image, vertical_skip=vertical_skip, horizontal_skip=horizontal_skip)
             mask = torch.nn.Parameter(torch.tensor(mask.detach().cpu().numpy()).detach().to(self.device)) # convert tensor into leaf node
         return mask
@@ -330,6 +330,8 @@ class CW(Attack):
         src_img = src_img.to(self.device)
         target_img = target_img.to(self.device)
         attack_img = target_img.clone().to(self.device)
+        if mask is not None:
+            mask = mask.to(self.device)
         # Project the image into inv tanh space
         w = self.inverse_tanh_space(target_img).detach().requires_grad_()
 
@@ -349,8 +351,8 @@ class CW(Attack):
         for iter in pbar:  
             adv_imgs = self.tanh_space(w)
             out = self.model(adv_imgs)
-            target_emb = out['y_hat']
-            loss = self.criterion(src_emb, target_emb, adv_imgs, attack_img)
+            adv_emb = out['y_hat']
+            loss = self.criterion(src_emb, adv_emb, adv_imgs, attack_img)
             pbar.set_description(f"[Running attack]: Loss {loss.item()}")
             optimizer.zero_grad()
             w.grad, = torch.autograd.grad(loss, [w])
