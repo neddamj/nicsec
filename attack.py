@@ -11,7 +11,7 @@ from tqdm import tqdm
  
 from utils import StatsMeter
 from masks import ring_mask, box_mask, dot_mask
-from evaluator import MetricsEvaluator
+from evaluator import Evaluator
 try:
     import wandb
     wandb_available = True
@@ -33,7 +33,7 @@ class Attack:
         self.config = config
 
         # Evaluation metrics
-        self.evaluator = MetricsEvaluator(self.batch_size, use_wandb=wandb_available)
+        self.evaluator = Evaluator(self.config, self.model)
         
     def _init_mask(
             self,
@@ -78,7 +78,6 @@ class Attack:
             net: torch.nn.Module, 
             device: torch.device
             ) -> Tuple:
-        x_clone = x_target.clone()
         for i, (x_hat, _) in enumerate(dataloader):
             x_hat = x_hat.to(device)
             x_src = x_hat.clone()
@@ -89,30 +88,15 @@ class Attack:
                 mask = None
 
             x_adv, loss_tracker = self.attack_batch(x_target, x_hat, mask=mask)
-            with torch.no_grad():
-                output = net(x_adv)['x_hat']
-
-            self.batch_eval(x_hat, x_clone, x_adv, output)
+            self.evaluator.batch_eval(x_src, x_target, x_adv)
             if i == self.config['num_batches'] - 1:
                 break
 
-        self.global_eval()
+        self.evaluator.global_eval()
         return (x_target, x_adv, x_src, loss_tracker)
     
     def attack_batch(self):
         raise NotImplementedError
-    
-    def batch_eval(
-            self, 
-            x: torch.Tensor, 
-            x_target: torch.Tensor,
-            x_adv: torch.Tensor,
-            output: torch.Tensor,
-        ) -> None:
-        self.evaluator.evaluate_batch(x, x_target, x_adv, output, self.model)
-
-    def global_eval(self) -> None:
-        self.evaluator.global_metrics()
 
 class MGD(Attack):
     def attack_batch(
@@ -159,9 +143,9 @@ class MGD(Attack):
                     f'Batch {self.batch_num} Loss': loss
                 })
                 
-            # Save the image that achieved the best performance
+            # Save the images that achieved the best performance
             if iter % 100 == 0:
-                s = self.evaluator.calculate_success_rate(target_img, src_imgs, self.model)
+                s = self.evaluator._asr(target_img, src_imgs)
                 if s >= best_sr:
                     best_sr = s
                     best_img = src_imgs.clone()
@@ -225,7 +209,7 @@ class PGD(Attack):
                 })
                 
             if iter % 100 == 0:
-                s = self.evaluator.calculate_success_rate(target_img, src_imgs, self.model) / self.batch_size
+                s = self.evaluator._asr(target_img, src_imgs)
                 if s >= best_sr:
                     best_sr = s
                     best_img = src_imgs.clone()
@@ -302,7 +286,7 @@ class CW(Attack):
                 })
                 
             if iter % 100 == 0:
-                s = self.evaluator.calculate_success_rate(target_img, adv_imgs, self.model) / self.batch_size
+                s = self.evaluator._asr(target_img, src_imgs)
                 if s >= best_sr:
                     best_sr = s
                     best_img = adv_imgs.clone()

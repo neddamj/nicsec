@@ -52,7 +52,7 @@ def get_dataset(config):
     elif config['dataset'] == 'kodak':
         dataset = KodakDataset( root = 'data/kodak', transform=transform)
     else:
-        raise ValueError("Invalid dataset. Use 'celeba' or 'imagenette'.")
+        raise ValueError("Invalid dataset. Use 'celeba', 'imagenette' or 'kodak'.")
     return dataset
 
 def get_attack_algo(config, compressor):
@@ -63,7 +63,7 @@ def get_attack_algo(config, compressor):
     elif config['algorithm'] == 'cw':
         attack = CW(model=compressor, config=config, device=device)
     else:
-        raise ValueError("Invalid algorithm. Use 'mgd' or 'pgd'.")
+        raise ValueError("Invalid algorithm. Use 'mgd', 'pgd' or 'cw'.")
     return attack
 
 def setup_wandb(config):
