@@ -43,29 +43,18 @@ class Evaluator:
     def _msssim(self,
                 img1: torch.Tensor,
                 img2: torch.Tensor):
-        """
-        Compute the average MS-SSIM between pairs of images.
-        If img1 is a single reference image and img2 a batch of images,
-        then for each i we compare img1 (or img1[0]) with img2[i].  
-        Here we assume that both tensors have the same batch dimension.
-        """
         avg_msssim = []
-        # If the two inputs have the same batch size, compare corresponding images.
         if img1.shape[0] == img2.shape[0]:
             for i in range(img1.shape[0]):
-                # Convert tensor image from [C, H, W] to numpy array [H, W, C]
                 img1_np = img1[i].permute(1, 2, 0).detach().cpu().numpy()
                 img2_np = img2[i].permute(1, 2, 0).detach().cpu().numpy()
-
-                # Convert to uint8 if images are in range [0,1]
                 img1_np = (img1_np * 255).astype(np.uint8)
                 img2_np = (img2_np * 255).astype(np.uint8)
 
                 msssim_score = msssim(img1_np, img2_np).astype(np.float64)
                 avg_msssim.append(msssim_score)
         else:
-            # If img1 is a single image (or only one image is intended to be the reference)
-            # then use img1[0] for every comparison.
+            # If img1 is a single image then use img1[0] for every comparison.
             ref = img1[0]
             for i in range(img2.shape[0]):
                 ref_np = ref.permute(1, 2, 0).detach().cpu().numpy()
@@ -82,10 +71,6 @@ class Evaluator:
     def _l2(self,
             img1: torch.Tensor,
             img2: torch.Tensor):
-        """
-        Compute the average per-sample L2 (Euclidean) distance normalized by the number of pixels.
-        Assumes img1 and img2 are batches of images of shape [B, C, H, W].
-        """
         diff = (img1 - img2).view(img1.shape[0], -1)
         norms = diff.norm(p=2, dim=1) / np.sqrt(diff.shape[1])
         return norms.mean()
@@ -93,18 +78,12 @@ class Evaluator:
     def _hamming_dist(self,
                       target_img: torch.Tensor,
                       adv_imgs: torch.Tensor):
-        """
-        Compute the hamming distance between the compressed representations.
-        This function compresses the target image and each adversarial image, and computes
-        the bit-level differences between the resulting byte strings.
-        """
         with torch.no_grad():
-            # Compress the target image; assuming target_img is a single image or a batch with one element.
             target_bytes = self.compressor.compress(target_img)['strings'][0][0]
             adv_bytes_list = self.compressor.compress(adv_imgs)['strings'][0]
 
-        hamm = []   # list to store the hamming distance for each adv image
-        success = 0 # counter for cases with zero hamming distance
+        hamm = []
+        success = 0 
         for adv_bytes in adv_bytes_list:
             # Only compare if lengths match.
             if len(adv_bytes) != len(target_bytes):
@@ -121,24 +100,15 @@ class Evaluator:
     def _asr(self,
              target_img: torch.Tensor,
              adv_imgs: torch.Tensor):
-        """
-        Compute the attack success rate (ASR) as the fraction of adversarial images whose 
-        compressed representations are identical (i.e. hamming distance zero).
-        """
         _, success = self._hamming_dist(target_img, adv_imgs)
-        # Here we use the number of adversarial images as denominator.
         return success / adv_imgs.shape[0]
 
     def batch_eval(self, 
                    src_imgs: torch.Tensor, 
                    target_img: torch.Tensor, 
                    adv_imgs: torch.Tensor):
-        """
-        Evaluate the batch of images using multiple metrics.
-        """
-        # Compute MS-SSIM between target and adversarial images.
+        # Compute MS-SSIM
         msssim_target_adv = self._msssim(target_img, adv_imgs)
-        # Compute MS-SSIM between source and adversarial images.
         msssim_src_adv = self._msssim(src_imgs, adv_imgs)
 
         # Compute normalized L2 distances.
@@ -165,9 +135,6 @@ class Evaluator:
             })
 
     def global_eval(self):
-        """
-        Compute global (average) results over all batches.
-        """
         global_results = {key: np.mean(values) for key, values in self.metrics.items()}
 
         if wandb_available:
