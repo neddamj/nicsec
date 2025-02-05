@@ -81,18 +81,18 @@ def direct_attack(config):
     setup_wandb(config)
 
     x = dataset[0][0].unsqueeze(0).to(device)
-    x_src, x_adv, x_target, loss_tracker =  attack.attack(x, dataloader, compressor, device)
+    x_target, x_adv, x_src, loss_tracker =  attack.attack(x, dataloader, compressor, device)
 
     if wandb_available:
         wandb.finish()
 
-    return x_src, x_adv, x_target, loss_tracker
+    return x_target, x_adv, x_src, loss_tracker
 
 def run_experiments(configs):
     for i, config in enumerate(configs):
         print(f"Running experiment {i + 1}/{len(configs)}")
         try:
-            x_src, x_adv, x_tar, _ = direct_attack(config)
+            x_target, x_adv, x_src, _ = direct_attack(config)
             print(f"Experiment {i + 1} completed successfully.\n\n")
         except Exception as e:
             print(f"Experiment {i + 1} failed with error: {e}\n\n")
