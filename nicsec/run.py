@@ -14,7 +14,7 @@ except ImportError:
     wandb = None
     wandb_available = False
 
-from attack import MGD, PGD, CW
+from bitstream_attack.attack import MGD, PGD, CW
 from datasets import KodakDataset
 from compressor import NeuralCompressor, JpegCompressor
 
@@ -46,11 +46,11 @@ def get_dataset(config):
         ])
     
     if config['dataset'] == 'celeba':
-        dataset = datasets.CelebA(root='./data', split='train', transform=transform, download=True)
+        dataset = datasets.CelebA(root='../data', split='train', transform=transform, download=True)
     elif config['dataset'] == 'imagenette':
-        dataset = datasets.Imagenette(root='./data', split='train', transform=transform)
+        dataset = datasets.Imagenette(root='../data', split='train', transform=transform)
     elif config['dataset'] == 'kodak':
-        dataset = KodakDataset( root = 'data/kodak', transform=transform)
+        dataset = KodakDataset( root = '../data/kodak', transform=transform)
     else:
         raise ValueError("Invalid dataset. Use 'celeba', 'imagenette' or 'kodak'.")
     return dataset

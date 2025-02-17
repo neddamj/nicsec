@@ -9,9 +9,9 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from typing import List, Dict, Tuple
 from tqdm import tqdm
  
-from utils import StatsMeter
-from masks import ring_mask, box_mask, dot_mask
-from evaluator import Evaluator
+from .utils import StatsMeter
+from .masks import ring_mask, box_mask, dot_mask
+from .evaluator import Evaluator
 try:
     import wandb
     wandb_available = True
@@ -137,6 +137,7 @@ class MGD(Attack):
             src_imgs.grad = self._apply_gradient_mask(src_imgs.grad, mask)
             optimizer.step()
             scheduler.step()
+            
             loss_tracker.update(loss.item())
             if wandb_available:
                 wandb.log({
@@ -149,6 +150,77 @@ class MGD(Attack):
                 if s >= best_sr:
                     best_sr = s
                     best_img = src_imgs.clone()
+
+        return best_img, loss_tracker
+    
+class MGD2(Attack):
+    def attack_batch(
+            self,
+            target_img: torch.Tensor, 
+            src_imgs: torch.Tensor,
+            mask: torch.Tensor = None
+        ) -> Tuple:
+        self.batch_num += 1
+        num_steps = self.config['num_steps']
+
+        target_img = target_img.to(self.device)
+        src_imgs = src_imgs.to(self.device)
+        if mask is not None:
+            mask = mask.to(self.device)
+
+        with torch.no_grad():  # No gradients for target embedding
+            target_emb = self.model(target_img)['y_hat']
+
+        # Initialize delta with tanh parameterization
+        epsilon = 1e-6  # Increased for numerical stability
+        clamped_src = torch.clamp(src_imgs, epsilon, 1 - epsilon)
+        delta = torch.nn.Parameter(
+            torch.arctanh(2 * clamped_src - 1),  # Inverse tanh scaling
+            requires_grad=True
+        )
+        optimizer = torch.optim.Adam([delta], lr=self.config['lr'])
+        scheduler = CosineAnnealingLR(optimizer, T_max=num_steps)  # Adjusted T_max
+
+        best_img = None
+        best_sr = 0
+        loss_tracker = StatsMeter()
+
+        pbar = tqdm(range(num_steps))
+        for iter in pbar:
+            src_adv = (torch.tanh(delta) + 1) / 2
+
+            # Test without mask first: comment out the hook
+            # hook = src_adv.register_hook(...) if mask else None
+
+            src_emb = self.model(src_adv)['y_hat']
+            loss = 1/2 * (1 - torch.nn.functional.cosine_similarity(target_emb, src_emb).mean()) + 1 * F.mse_loss(clamped_src, src_adv)
+
+            optimizer.zero_grad()
+            loss.backward(retain_graph=True)
+            
+            # Optional: Clip gradients to prevent explosion
+            torch.nn.utils.clip_grad_norm_([delta], max_norm=1.0)
+            delta.grad = delta.grad * mask
+            
+            optimizer.step()
+            scheduler.step()
+
+            """# Log gradients (for debugging)
+            if iter % 100 == 0:
+                pbar.write(f"Grad mean: {delta.grad.mean().item():.4f}")"""
+
+            # Update tracking
+            pbar.set_description(f"[Attack]: Loss {loss.item():.4f}")
+            loss_tracker.update(loss.item())
+
+            # Save best adversarial image
+            if iter % 100 == 0:
+                with torch.no_grad():
+                    current_adv = (torch.tanh(delta) + 1) / 2
+                    sr = self.evaluator._asr(target_img, current_adv)
+                    if sr >= best_sr:
+                        best_sr = sr
+                        best_img = current_adv.clone().detach()
 
         return best_img, loss_tracker
     
