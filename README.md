@@ -1,5 +1,5 @@
-# Adversarial Attacks on Deep Neural Compression
+# Adversarial Attacks on Neural Image Compression
 
-Collision attacks on deep neural compression networks.
+Bitstream collision attacks on neural image compression networks.
 
-The differentiable JPEG implementation in this work is a modified version of [this work](https://github.com/mlomnitz/DiffJPEG).
+The differentiable JPEG implementation in this work is a modified version of [this work](https://github.com/mlomnitz/DiffJPEG)
