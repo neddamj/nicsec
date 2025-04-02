@@ -14,7 +14,7 @@ except ImportError:
     wandb = None
     wandb_available = False
 
-from bitstream_attack.attack import MGD, MGD2, PGD, CW
+from bitstream_attack.attack import MGD, MGD2, MGD3, MGD4, PGD, CW
 from datasets import KodakDataset
 from compressor import NeuralCompressor, JpegCompressor
 
@@ -60,6 +60,10 @@ def get_attack_algo(config, compressor):
         attack = MGD(model=compressor, config=config, device=device)
     elif config['algorithm'] == 'mgd2':
         attack = MGD2(model=compressor, config=config, device=device)
+    elif config['algorithm'] == 'mgd3':
+        attack = MGD3(model=compressor, config=config, device=device)
+    elif config['algorithm'] == 'mgd4':
+        attack = MGD4(model=compressor, config=config, device=device)
     elif config['algorithm'] == 'pgd':
         attack = PGD(model=compressor, config=config, device=device)
     elif config['algorithm'] == 'cw':

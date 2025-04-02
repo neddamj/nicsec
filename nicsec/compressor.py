@@ -34,6 +34,12 @@ class NeuralCompressor:
 
     def decompress(self, x_hat: List, shape: List) -> torch.Tensor:
         return self.model.decompress(x_hat, shape)
+    
+    def analysis(self, x: torch.Tensor) -> torch.Tensor:
+        return self.model.analysis(x)
+    
+    def synthesis(self, y: torch.Tensor) -> torch.Tensor:
+        return self.model.synthesis(y)
 
 class JpegCompressor:
     def __init__(
@@ -53,3 +59,9 @@ class JpegCompressor:
 
     def decompress(self, x_hat: List, shape: List) -> torch.Tensor:
         return self.jpeg.decompress(x_hat, shape)
+    
+    def analysis(self, x: torch.Tensor) -> torch.Tensor:    
+        return self.jpeg.analysis(x)
+    
+    def sythesis(self, y: torch.Tensor) -> torch.Tensor:
+        return self.jpeg.synthesis(y)

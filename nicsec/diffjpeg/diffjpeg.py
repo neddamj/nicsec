@@ -23,13 +23,13 @@ class DiffJPEG(nn.Module):
         else:
             rounding = torch.round
         factor = quality_to_factor(quality)
-        self.analysis = compress_jpeg(rounding=rounding, factor=factor)
-        self.synthesis = decompress_jpeg(height, width, rounding=rounding,
+        self.g_a = compress_jpeg(rounding=rounding, factor=factor)
+        self.g_s = decompress_jpeg(height, width, rounding=rounding,
                                           factor=factor)
 
     def forward(self, x):
-        y_hat, shape = self.analysis(x)
-        x_hat = self.synthesis(y_hat, shape)
+        y_hat, shape = self.g_a(x)
+        x_hat = self.g_s(y_hat, shape)
         return {
             'x_hat': x_hat,
             'y_hat': y_hat
@@ -40,7 +40,7 @@ class DiffJPEG(nn.Module):
         shape = None
         for i in range(x.shape[0]):
             single_image = x[i:i+1] 
-            y_hat, shape = self.analysis(single_image)
+            y_hat, shape = self.g_a(single_image)
             np_data = y_hat.cpu().detach().numpy()
             buffer = BytesIO()
             np.save(buffer, np_data)  # Save numpy array to buffer
@@ -59,8 +59,17 @@ class DiffJPEG(nn.Module):
             np_data = np.load(buffer)  
             tensor = torch.from_numpy(np_data)            
             # Decode the tensor back to an image
-            x_hat = self.synthesis(tensor, shape)
+            x_hat = self.g_s(tensor, shape)
             decompressed_images.append(x_hat)
         # Stack all decompressed images along the batch dimension
         x_hat_batch = torch.cat(decompressed_images, dim=0)
         return {'x_hat': x_hat_batch}
+    
+    def analysis(self, x):
+        y_hat, shape = self.g_a(x)
+        return y_hat, shape
+    
+    def synthesis(self, y_hat, shape=None):
+        assert shape is not None, "Shape must be provided for synthesis for JPEG compressor."
+        x_hat = self.g_a(y_hat, shape)
+        return x_hat

@@ -154,6 +154,12 @@ class MGD(Attack):
         return best_img, loss_tracker
     
 class MGD2(Attack):
+    """ 
+    Implementing idea 4. Doesnt give good results. Converegence of linf is very slow so I tried to use l2 first.
+    L2 converges the linf distance to <0.5, which is what we want but when we switch to linf, the loss actually increases
+    and the adv images converge to the target. Probably a bug in the code somewhere. Will spend a couple a day or 2 max
+    debugging.
+    """
     def criterion(self, src_emb, target_emb, ord='inf'):
         if ord == 'inf':
             return torch.dist(src_emb, target_emb, p=float('inf'))
@@ -208,6 +214,119 @@ class MGD2(Attack):
                 if s >= best_sr:
                     best_sr = s
                     best_img = src_imgs.clone()
+
+        return best_img, loss_tracker
+
+class MGD3(Attack):
+    """ Implementing idea 3. Doesnt give good results """
+    def criterion(self, adv_emb, target_emb, adv_img, src_img):
+        return 0.1 * F.mse_loss(adv_emb, target_emb) + F.mse_loss(adv_img, src_img)
+    
+    def attack_batch(
+            self,
+            target_img: torch.Tensor, 
+            src_imgs: torch.Tensor,
+            mask: torch.Tensor = None
+        ) -> Tuple:
+        num_steps = self.config['num_steps']
+
+        # Move images to the same device as the model
+        target_img = target_img.to(self.device)
+        src_imgs = src_imgs.to(self.device)
+        if mask is not None:
+            mask = mask.to(self.device)
+        # Get the embedding of the target image and the source images
+        target_emb = self.model.analysis(target_img)
+        adv_embs = self.model.analysis(src_imgs).detach().clone().requires_grad_(True)
+
+        # Setup the optimizer and LR scheuler
+        optimizer = torch.optim.Adam([adv_embs], lr=self.config['lr'])  
+        scheduler = CosineAnnealingLR(optimizer, T_max=self.config['num_steps'] / 10)
+
+        # Track the best performance        
+        best_img = None
+        best_loss = float('inf')
+        loss_tracker = StatsMeter()
+        pbar = tqdm(range(num_steps))
+
+        for iter in pbar:
+            #out = self.model(src_imgs)
+            #src_emb = out['y_hat']
+            adv_imgs = self.model.synthesis(adv_embs)
+            loss = self.criterion(adv_embs, target_emb, adv_imgs, src_imgs)
+            #loss = self.criterion(target_emb, src_emb)
+            pbar.set_description(f"[Running attack]: Loss {loss.item()}")
+            optimizer.zero_grad()
+            adv_embs.grad, = torch.autograd.grad(loss, [adv_embs])
+            #src_imgs.grad = self._apply_gradient_mask(src_imgs.grad, mask)
+            optimizer.step()
+            scheduler.step()
+
+            # Update tracking
+            loss_tracker.update(loss.item())
+
+            # Save the best adv image
+            if iter % 100 == 0:
+                if loss_tracker.min < best_loss:
+                    best_loss = loss_tracker.min
+                    best_img = adv_imgs.clone()
+
+        return best_img, loss_tracker
+    
+class MGD4(Attack):
+    """ Implementing idea 4. Doesnt give good results """
+    def criterion(self, adv_emb, target_emb, adv_img, target_img):
+        return F.mse_loss(adv_emb, target_emb) + F.mse_loss(adv_img, target_img)
+    
+    def attack_batch(
+            self,
+            target_img: torch.Tensor, 
+            src_imgs: torch.Tensor,
+            mask: torch.Tensor = None
+        ) -> Tuple:
+        num_steps = self.config['num_steps']
+
+        # Move images to the same device as the model
+        target_img = target_img.to(self.device)
+        src_imgs = src_imgs.to(self.device)
+        if mask is not None:
+            mask = mask.to(self.device)
+        # Get the embedding of the target image and the source images
+        target_emb = self.model.analysis(target_img)
+        src_embs = self.model.analysis(src_imgs).detach().clone().requires_grad_(True)
+
+        # Setup the optimizer and LR scheuler
+        optimizer = torch.optim.Adam([src_embs], lr=self.config['lr'])  
+        scheduler = CosineAnnealingLR(optimizer, T_max=self.config['num_steps'] / 10)
+
+        # Track the best performance        
+        best_img = None
+        best_loss = float('inf')
+        loss_tracker = StatsMeter()
+        pbar = tqdm(range(num_steps))
+
+        for iter in pbar:
+            #out = self.model(src_imgs)
+            #src_emb = out['y_hat']
+            adv_imgs = self.model.synthesis(src_embs)
+            adv_embs = self.model.analysis(adv_imgs)
+            loss = self.criterion(adv_embs, target_emb, adv_imgs, target_img)
+            #loss = self.criterion(target_emb, src_emb)
+            pbar.set_description(f"[Running attack]: Loss {loss.item()}")
+            optimizer.zero_grad()
+            adv_embs.grad, = torch.autograd.grad(loss, [adv_embs])
+            #src_imgs.grad = self._apply_gradient_mask(src_imgs.grad, mask)
+            optimizer.step()
+            scheduler.step()
+
+            # Update tracking
+            loss_tracker.update(loss.item())
+
+            # Save the best adv image
+            if iter % 100 == 0:
+                if loss_tracker.min < best_loss:
+                    best_loss = loss_tracker.min
+                    best_img = adv_imgs.clone()
 
         return best_img, loss_tracker
     
