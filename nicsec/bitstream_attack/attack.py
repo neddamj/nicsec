@@ -155,7 +155,7 @@ class MGD(Attack):
     
 class MGD2(Attack):
     """ 
-    Implementing idea 4. Doesnt give good results. Converegence of linf is very slow so I tried to use l2 first.
+    Implementing idea 2. Doesnt give good results. Converegence of linf is very slow so I tried to use l2 first.
     L2 converges the linf distance to <0.5, which is what we want but when we switch to linf, the loss actually increases
     and the adv images converge to the target. Probably a bug in the code somewhere. Will spend a couple a day or 2 max
     debugging.
@@ -276,7 +276,7 @@ class MGD3(Attack):
 class MGD4(Attack):
     """ Implementing idea 4. Doesnt give good results """
     def criterion(self, adv_emb, target_emb, adv_img, target_img):
-        return F.mse_loss(adv_emb, target_emb) + F.mse_loss(adv_img, target_img)
+        return F.mse_loss(adv_emb, target_emb) #+ F.mse_loss(adv_img, target_img)
     
     def attack_batch(
             self,
