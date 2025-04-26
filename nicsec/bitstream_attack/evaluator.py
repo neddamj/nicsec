@@ -42,7 +42,8 @@ class Evaluator:
 
     def _msssim(self,
                 img1: torch.Tensor,
-                img2: torch.Tensor):
+                img2: torch.Tensor,
+                std: bool = False):
         avg_msssim = []
         if img1.shape[0] == img2.shape[0]:
             for i in range(img1.shape[0]):
@@ -65,16 +66,21 @@ class Evaluator:
 
                 msssim_score = msssim(ref_np, img2_np).astype(np.float64)
                 avg_msssim.append(msssim_score)
-                
-        return torch.tensor(avg_msssim).mean()
+        # Return the average and (optional) standard deviation of the MSSSIM scores.       
+        if not std:       
+            return torch.tensor(avg_msssim).mean()
+        return torch.tensor(avg_msssim).mean(), torch.tensor(avg_msssim).std()
         
     def _l2(self,
             img1: torch.Tensor,
-            img2: torch.Tensor):
+            img2: torch.Tensor,
+            std: bool = False):
         diff = (img1 - img2).view(img1.shape[0], -1)
         norms = diff.norm(p=2, dim=1) / np.sqrt(diff.shape[1])
-        return norms.mean()
-    
+        if not std:
+            return norms.mean()
+        return norms.mean(), norms.std()
+        
     def _hamming_dist(self,
                       target_img: torch.Tensor,
                       adv_imgs: torch.Tensor):
