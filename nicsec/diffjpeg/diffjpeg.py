@@ -64,12 +64,3 @@ class DiffJPEG(nn.Module):
         # Stack all decompressed images along the batch dimension
         x_hat_batch = torch.cat(decompressed_images, dim=0)
         return {'x_hat': x_hat_batch}
-    
-    def analysis(self, x):
-        y_hat, shape = self.g_a(x)
-        return y_hat, shape
-    
-    def synthesis(self, y_hat, shape=None):
-        assert shape is not None, "Shape must be provided for synthesis for JPEG compressor."
-        x_hat = self.g_a(y_hat, shape)
-        return x_hat

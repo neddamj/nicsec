@@ -7,7 +7,9 @@ from load_compression_models import (
     my_bmshj2018_factorized_relu,
     my_bmshj2018_hyperprior,
     my_mbt2018,
-    my_mbt2018_mean
+    my_mbt2018_mean,
+    my_cheng2020_anchor,
+    my_cheng2020_attn
 )
 
 class NeuralCompressor:
@@ -18,11 +20,13 @@ class NeuralCompressor:
             device:str = 'cpu'
             ) -> None:
         models = {
-            'my_bmshj2018_factorized_relu': my_bmshj2018_factorized_relu(quality=quality_factor, pretrained=True),
-            'my_bmshj2018_factorized'     : my_bmshj2018_factorized(quality=quality_factor, pretrained=True),
-            'my_bmshj2018_hyperprior'     : my_bmshj2018_hyperprior(quality=quality_factor, pretrained=True),
+            'my_bmshj2018_factorized_relu': my_bmshj2018_factorized_relu(quality=quality_factor, pretrained=True).train(),
+            'my_bmshj2018_factorized'     : my_bmshj2018_factorized(quality=quality_factor, pretrained=True).train(),
+            'my_bmshj2018_hyperprior'     : my_bmshj2018_hyperprior(quality=quality_factor, pretrained=True).train(),
             'my_mbt2018'                  : my_mbt2018(quality=quality_factor, pretrained=True).train(),
-            'my_mbt2018_mean'             : my_mbt2018_mean(quality=quality_factor, pretrained=True)
+            'my_mbt2018_mean'             : my_mbt2018_mean(quality=quality_factor, pretrained=True).train(),
+            'my_cheng2020_anchor'         : my_cheng2020_anchor(quality=quality_factor, pretrained=True).train(),
+            'my_cheng2020_attn'           : my_cheng2020_attn(quality=quality_factor, pretrained=True).train()
         }
         self.model = models[model_id].train().to(torch.float32).to(device)
 
@@ -34,12 +38,6 @@ class NeuralCompressor:
 
     def decompress(self, x_hat: List, shape: List) -> torch.Tensor:
         return self.model.decompress(x_hat, shape)
-    
-    def analysis(self, x: torch.Tensor) -> torch.Tensor:
-        return self.model.analysis(x)
-    
-    def synthesis(self, y: torch.Tensor) -> torch.Tensor:
-        return self.model.synthesis(y)
 
 class JpegCompressor:
     def __init__(
@@ -59,9 +57,3 @@ class JpegCompressor:
 
     def decompress(self, x_hat: List, shape: List) -> torch.Tensor:
         return self.jpeg.decompress(x_hat, shape)
-    
-    def analysis(self, x: torch.Tensor) -> torch.Tensor:    
-        return self.jpeg.analysis(x)
-    
-    def sythesis(self, y: torch.Tensor) -> torch.Tensor:
-        return self.jpeg.synthesis(y)
