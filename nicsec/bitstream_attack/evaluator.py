@@ -45,8 +45,9 @@ class Evaluator:
                 img2: torch.Tensor,
                 std: bool = False):
         avg_msssim = []
+        num_imgs = max(img1.shape[0], img2.shape[0])
         if img1.shape[0] == img2.shape[0]:
-            for i in range(img1.shape[0]):
+            for i in range(num_imgs):
                 img1_np = img1[i].permute(1, 2, 0).detach().cpu().numpy()
                 img2_np = img2[i].permute(1, 2, 0).detach().cpu().numpy()
                 img1_np = (img1_np * 255).astype(np.uint8)
@@ -57,7 +58,7 @@ class Evaluator:
         else:
             # If img1 is a single image then use img1[0] for every comparison.
             ref = img1[0]
-            for i in range(img2.shape[0]):
+            for i in range(num_imgs):
                 ref_np = ref.permute(1, 2, 0).detach().cpu().numpy()
                 img2_np = img2[i].permute(1, 2, 0).detach().cpu().numpy()
 
@@ -69,7 +70,7 @@ class Evaluator:
         # Return the average and (optional) standard deviation of the MSSSIM scores.       
         if not std:       
             return torch.tensor(avg_msssim).mean()
-        return torch.tensor(avg_msssim).mean(), torch.tensor(avg_msssim).std()
+        return torch.tensor(avg_msssim).mean(), torch.tensor(avg_msssim).std(), avg_msssim
         
     def _l2(self,
             img1: torch.Tensor,
