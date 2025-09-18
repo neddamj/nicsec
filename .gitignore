@@ -3,4 +3,7 @@ data
 __pycache__
 generate_masks.ipynb
 wandb/
-*.ipynb
+test.ipynb
+transfer.ipynb
+visualize.ipynb
+defense.ipynb
