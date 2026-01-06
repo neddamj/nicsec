@@ -1,4 +1,4 @@
-from compressai.models import (
+from google import (
     FactorizedPrior, 
     FactorizedPriorReLU, 
     ScaleHyperprior,
@@ -13,10 +13,29 @@ from compressai.layers import (
     conv3x3,
     subpel_conv3x3,
 )
+from compressai.models.utils import update_registered_buffers
+
+
 import torch
 import torch.nn as nn
 
 from typing import Dict
+
+def _prepare_entropy_buffers(net, state_dict):
+    if hasattr(net, "entropy_bottleneck"):
+        update_registered_buffers(
+            net.entropy_bottleneck,
+            "entropy_bottleneck",
+            ["_quantized_cdf", "_offset", "_cdf_length"],
+            state_dict,
+        )
+    if hasattr(net, "gaussian_conditional"):
+        update_registered_buffers(
+            net.gaussian_conditional,
+            "gaussian_conditional",
+            ["_quantized_cdf", "_offset", "_cdf_length", "scale_table"],
+            state_dict,
+        )
 
 class MyFactorizedPrior(FactorizedPrior):
     def __init__(self, *args, **kwargs) -> None:
@@ -67,6 +86,7 @@ class MyScaleHyperprior(ScaleHyperprior):
         return {
             "x_hat": x_hat,
             "y_hat": y,
+            "z": z,
             "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
         }
     
@@ -86,6 +106,7 @@ class MyMeanScaleHyperprior(MeanScaleHyperprior):
         return {
             "x_hat": x_hat,
             "y_hat": y,
+            "z": z,
             "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
         }
     
@@ -113,6 +134,7 @@ class MyJointAutoregressiveHierarchicalPriors(JointAutoregressiveHierarchicalPri
         return {
             "x_hat": x_hat,
             "y_hat": y,
+            "z": z,
             "likelihoods": {"y": y_likelihoods, "z": z_likelihoods},
         }
     
@@ -170,6 +192,8 @@ class MyCheng2020Anchor(MyJointAutoregressiveHierarchicalPriors):
         """Return a new model instance from `state_dict`."""
         N = state_dict["g_a.0.conv1.weight"].size(0)
         net = cls(N)
+        _prepare_entropy_buffers(net, state_dict)
+
         net.load_state_dict(state_dict)
         return net
     
