@@ -1,4 +1,4 @@
-from google import (
+from google_models import (
     FactorizedPrior, 
     FactorizedPriorReLU, 
     ScaleHyperprior,
