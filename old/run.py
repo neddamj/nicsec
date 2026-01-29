@@ -11,20 +11,23 @@ try:
     import wandb
     wandb_available = True
 except ImportError:
+    print('WandB not available')
     wandb = None
     wandb_available = False
 
-from bitstream_attack.attack import MGD, PGD, CW
-from datasets import KodakDataset
+from bitstream_attack.attack import MGD, PGD, CW, MGDHyperprior, CollisionAttack
+from dataset import KodakDataset
 from compressor import NeuralCompressor, JpegCompressor
 
 # Disable TF32 Tensor Cores
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = False
 
-device = torch.device("cuda" if torch.cuda.is_available() else 
-                      "mps" if torch.backends.mps.is_available() else 
-                      "cpu")
+#device = torch.device("cuda" if torch.cuda.is_available() else 
+#                      "mps" if torch.backends.mps.is_available() else 
+#                      "cpu")
+
+device = 'cpu'
 
 def load_configs(json_path):
     with open(json_path, 'r') as f:
@@ -58,12 +61,16 @@ def get_dataset(config):
 def get_attack_algo(config, compressor):
     if config['algorithm'] == 'mgd':
         attack = MGD(model=compressor, config=config, device=device)
+    elif config['algorithm'] == 'hyp':
+        attack = MGDHyperprior(model=compressor, config=config, device=device)
     elif config['algorithm'] == 'pgd':
         attack = PGD(model=compressor, config=config, device=device)
     elif config['algorithm'] == 'cw':
         attack = CW(model=compressor, config=config, device=device)
+    elif config['algorithm'] == 'collision':
+        attack = CollisionAttack(model=compressor, config=config, device=device)
     else:
-        raise ValueError("Invalid algorithm. Use 'mgd', 'pgd' or 'cw'.")
+        raise ValueError("Invalid algorithm. Use 'mgd', 'pgd', 'diff', 'hyp', 'cw', or 'collision'.")
     return attack
 
 def setup_wandb(config):

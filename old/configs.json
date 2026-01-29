@@ -1,0 +1,21 @@
+[
+    {
+        "lr": 1e-3,
+        "batch_size": 1,
+        "num_batches": 10,
+        "num_steps": 20000,
+        "image_size": 256,
+        "quality_factor": 1,
+        "mask_type": "dot",
+        "dataset": "imagenette",
+        "compressor_type": "neural",
+        "model_id": "my_mbt2018_mean",
+        "algorithm": "collision",
+        "mgd": {
+            "vertical_skip": 4,
+            "horizontal_skip": 4
+        },
+        "pgd": {"eta": 0.1},
+        "cw": {"c": 1.0}
+    }
+]

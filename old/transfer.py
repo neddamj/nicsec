@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from attack import Attack, MetricsEvaluator
+from bitstream_attack.attack import Attack, MetricsEvaluator
 from compressor import NeuralCompressor, JpegCompressor
 
 # Disable TF32 Tensor Cores for better reproducibility
