@@ -10,6 +10,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 
 import torch
+import torch.nn.functional as F
 from torchvision.transforms import v2 as T
 from torchvision.tv_tensors import BoundingBoxes, Image as TVImage
 from tqdm import tqdm
@@ -20,24 +21,26 @@ from dataset import SVHNFullBBox
 # ---------------------------------------------------------------------
 # Config (edit manually)
 # ---------------------------------------------------------------------
+img_id = 88
 CONFIG = {
-    "data_root": "/home/jmadden2/Documents/Research/nicsec/data/svhn_full/train_extracted",
-    "base_name": "1_edit.png",      # appearance starts from this
-    "tgt_name":  "1_resized.png",   # supplies target bitstream
-    "save_name": "1_swap_adv.png",
+    "data_root": "/home/jmadden2/Documents/Research/nicsec/data/svhn_256",
+    "base_name": f"{img_id}_edit.png",      # appearance starts from this
+    "tgt_name":  f"{img_id}.png",           # supplies target bitstream
+    "save_name": f"{img_id}_swapped.png",
     "image_size": 256,
     "model_id": "my_bmshj2018_hyperprior",
     "quality": 1,
     "lr": 1e-3,
     "num_steps": 10000,
-    "patch_coef": 0.3,   # weight for swap losses
-    "bg_coef": 0,     # weight for keeping background near base image
-    "tv_coef": 1e-4,     # helps hide seams
-    "viz_name": "1_swap_viz.png",  # saved grid of base/target/adv with bitstreams; set to None to skip
+    "patch_coef": 0.5,                      # weight for swap losses
+    "bg_coef": 0,                           # weight for keeping background near base image
+    "tv_coef": 1e-4,                        # helps hide seams
+    "sim_coef": 0.2,                        # weight for overall similarity to base image
+    "viz_name": f"{img_id}_viz.png",        # saved grid of base/target/adv with bitstreams; set to None to skip
     "output_dir": "../outputs/patch_swap",
     # Set boxes in ORIGINAL pixel coords (x1,y1,x2,y2). If None, auto choices:
-    "boxA": [100, 100, 50, 50],        # default: SVHN first digit bbox
-    "boxB": [100, 100, 50, 50],        # default: boxA shifted right by its width
+    "boxA": [100, 100, 50, 50],             # default: SVHN first digit bbox
+    "boxB": [100, 100, 50, 50],             # default: boxA shifted right by its width
 }
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -78,6 +81,52 @@ def clamp_box_xyxy(box, size):
 def total_variation(x):
     return (torch.mean(torch.abs(x[:, :, 1:, :] - x[:, :, :-1, :])) +
             torch.mean(torch.abs(x[:, :, :, 1:] - x[:, :, :, :-1])))
+
+
+# ---------------------------------------------------------------------
+# Quality metrics (adv should look like base)
+# ---------------------------------------------------------------------
+def _gaussian_kernel(channels, kernel_size=11, sigma=1.5, device=None, dtype=None):
+    ax = torch.arange(kernel_size, device=device, dtype=dtype) - (kernel_size - 1) / 2.0
+    kernel_1d = torch.exp(-(ax ** 2) / (2 * sigma ** 2))
+    kernel_1d = kernel_1d / kernel_1d.sum()
+    kernel_2d = torch.outer(kernel_1d, kernel_1d)
+    kernel = kernel_2d.expand(channels, 1, kernel_size, kernel_size)
+    return kernel
+
+
+@torch.no_grad()
+def ssim_torch(x, y, kernel_size=11, sigma=1.5, c1=0.01 ** 2, c2=0.03 ** 2):
+    """
+    Structural Similarity Index for tensors in [0,1].
+    Inputs: x, y shaped (N, C, H, W) on same device.
+    Returns scalar tensor.
+    """
+    if x.ndim != 4 or y.ndim != 4:
+        raise ValueError("ssim_torch expects tensors shaped (N,C,H,W)")
+    channels = x.size(1)
+    kernel = _gaussian_kernel(channels, kernel_size, sigma, device=x.device, dtype=x.dtype)
+    padding = kernel_size // 2
+    mu_x = F.conv2d(x, kernel, padding=padding, groups=channels)
+    mu_y = F.conv2d(y, kernel, padding=padding, groups=channels)
+    mu_x2, mu_y2, mu_xy = mu_x * mu_x, mu_y * mu_y, mu_x * mu_y
+
+    sigma_x2 = F.conv2d(x * x, kernel, padding=padding, groups=channels) - mu_x2
+    sigma_y2 = F.conv2d(y * y, kernel, padding=padding, groups=channels) - mu_y2
+    sigma_xy = F.conv2d(x * y, kernel, padding=padding, groups=channels) - mu_xy
+
+    ssim_n = (2 * mu_xy + c1) * (2 * sigma_xy + c2)
+    ssim_d = (mu_x2 + mu_y2 + c1) * (sigma_x2 + sigma_y2 + c2)
+    ssim_map = ssim_n / ssim_d
+    return ssim_map.mean()
+
+
+@torch.no_grad()
+def psnr_torch(x, y, max_val=1.0):
+    mse = F.mse_loss(x, y)
+    if mse == 0:
+        return torch.tensor(float("inf"), device=x.device)
+    return 10 * torch.log10(max_val ** 2 / mse)
 
 def first_hex_digits(bts, num=30):
     hx = bts.hex()
@@ -175,6 +224,8 @@ for it in pbar:
         loss_tgt += torch.sum((ea - et) ** 2, dim=tuple(range(1, ea.dim())))
     loss_tgt = loss_tgt / num_emb
 
+    loss_sim = F.mse_loss(x_adv, x_base.unsqueeze(0))
+
     # Swap losses
     patchA_adv = x_adv[0, :, yA1:yA2, xA1:xA2]
     patchB_adv = x_adv[0, :, yB1:yB2, xB1:xB2]
@@ -197,6 +248,7 @@ for it in pbar:
         + cfg["patch_coef"] * (loss_swapA + loss_swapB)
         + cfg["bg_coef"] * loss_bg
         + cfg["tv_coef"] * loss_tv
+        + cfg["sim_coef"] * loss_sim
     )
 
     opt.zero_grad()
@@ -231,6 +283,12 @@ for it in pbar:
 # Final bitstream + visualization
 with torch.no_grad():
     bytes_adv_final = compressor.compress(x_adv)["strings"][0][0]
+
+# Quality metrics (adv vs base)
+with torch.no_grad():
+    ssim_adv = ssim_torch(x_adv, x_base.unsqueeze(0)).item()
+    psnr_adv = psnr_torch(x_adv, x_base.unsqueeze(0)).item()
+print(f"SSIM(base, adv): {ssim_adv:.4f}; PSNR(base, adv): {psnr_adv:.2f}dB")
 
 if cfg.get("viz_name"):
     output_dir, viz_path = cfg["output_dir"], cfg["viz_name"]
