@@ -15,7 +15,7 @@ from PIL import Image
 CONFIG = {
     # Paths
     "input_dir": "../data/svhn_full/train_extracted/train",
-    "output_dir": "../data/svhn_256",
+    "output_dir": "../data/svhn_256/train",
 
     # Selection + resize
     "count": 100,                   # 0 means all
