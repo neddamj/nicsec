@@ -60,3 +60,6 @@ class JpegCompressor:
 
     def decompress(self, x_hat: List, shape: List) -> torch.Tensor:
         return self.jpeg.decompress(x_hat, shape)
+    
+    def compress_till_rounding(self, x: torch.Tensor) -> Dict:
+        return self.jpeg.compress_till_rounding(x)
