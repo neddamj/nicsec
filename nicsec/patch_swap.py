@@ -15,33 +15,47 @@ from torchvision.transforms import v2 as T
 from torchvision.tv_tensors import BoundingBoxes, Image as TVImage
 from tqdm import tqdm
 
-from compressor import NeuralCompressor
+from compressor import NeuralCompressor, JpegCompressor
 from dataset import SVHNFullBBox
 
 # ---------------------------------------------------------------------
 # Config (edit manually)
 # ---------------------------------------------------------------------
-img_id = 88
+docvqa_coords = {
+    1: [70, 20, 80, 40],
+    2: [100, 100, 80, 30],
+    3: [295, 225, 35, 30],
+    4: [400, 30, 80, 20],
+    5: [380, 110, 90, 30],
+    6: [390, 395, 40, 30],
+}
+img_id = 5
+dataset = "docvqa"
 CONFIG = {
-    "data_root": "/home/jmadden2/Documents/Research/nicsec/data/svhn_256",
+    "data_root": f"/home/jmadden2/Documents/Research/nicsec/data/{dataset}/",
     "base_name": f"{img_id}_edit.png",      # appearance starts from this
     "tgt_name":  f"{img_id}.png",           # supplies target bitstream
     "save_name": f"{img_id}_swapped.png",
-    "image_size": 256,
-    "model_id": "my_bmshj2018_hyperprior",
+    "image_size": 512,
+    "compressor": "neural",
+    "model_id": "my_bmshj2018_factorized",  # compressor model
     "quality": 1,
     "lr": 1e-3,
     "num_steps": 10000,
     "patch_coef": 0.5,                      # weight for swap losses
     "bg_coef": 0,                           # weight for keeping background near base image
-    "tv_coef": 1e-4,                        # helps hide seams
-    "sim_coef": 0.2,                        # weight for overall similarity to base image
+    "tv_coef": 0,                        # helps hide seams
+    "sim_coef": 0.0,                        # weight for overall similarity to base image
     "viz_name": f"{img_id}_viz.png",        # saved grid of base/target/adv with bitstreams; set to None to skip
-    "output_dir": "../outputs/patch_swap",
+    "output_dir": f"../outputs/patch_swap/{dataset}",
     # Set boxes in ORIGINAL pixel coords (x1,y1,x2,y2). If None, auto choices:
     "boxA": [100, 100, 50, 50],             # default: SVHN first digit bbox
     "boxB": [100, 100, 50, 50],             # default: boxA shifted right by its width
 }
+
+if CONFIG["data_root"].endswith("docvqa/"):
+    CONFIG["boxA"] = docvqa_coords.get(img_id, None)
+    CONFIG["boxB"] = docvqa_coords.get(img_id, None)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("device:", device)
@@ -198,7 +212,11 @@ if (xA2 - xA1 != xB2 - xB1) or (yA2 - yA1 != yB2 - yB1):
     raise ValueError("boxA and boxB must have same width and height after resize.")
 
 # Compressor + targets
-compressor = NeuralCompressor(model_id=cfg["model_id"], quality_factor=cfg["quality"], device=device)
+if cfg["compressor"] == "neural":
+    compressor = NeuralCompressor(model_id=cfg["model_id"], quality_factor=cfg["quality"], device=device)
+else:
+    compressor = JpegCompressor(differentiable=True, quality_factor=cfg["quality"], image_size=cfg["image_size"], device=device)
+
 with torch.no_grad():
     x_tgt = x_tgt.unsqueeze(0).to(device)
     bytes_tgt = compressor.compress(x_tgt)["strings"][0][0]
