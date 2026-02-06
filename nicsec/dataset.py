@@ -99,13 +99,21 @@ class WiderFaceDataset:
 
     def _collate_fn(self, batch):
         """Custom collate function for the DataLoader."""
-        # Stack images (already tensors from the transform step)
-        images = torch.stack([ex["image"] for ex in batch])
+        # Stack images (ensure tensors even if the dataset returns lists)
+        images = []
+        targets = []
+        for ex in batch:
+            img = ex["image"]
+            if not torch.is_tensor(img):
+                img = torch.as_tensor(img)
+            images.append(img.float())
 
-        # Collect targets (converting float bboxes to int as per your original code)
-        # targets = [torch.tensor(ex["faces"]["bbox"], dtype=torch.int32) for ex in batch]
-        # convert bboxes to a list of tensors because different images have different number of boxes
-        targets = [ex["faces"]["bbox"].to(torch.int32) for ex in batch]
+            bboxes = ex["faces"]["bbox"]
+            if not torch.is_tensor(bboxes):
+                bboxes = torch.as_tensor(bboxes)
+            targets.append(bboxes.to(torch.int32))
+
+        images = torch.stack(images)
 
         return images, targets
 
@@ -123,9 +131,8 @@ class WiderFaceDataset:
         ds_resized = ds_filtered.map(self._resize_and_transform)
 
         # 4. Create DataLoader
-        # Note: We set format to ensure columns are accessible as python objects/tensors
-        # often necessary depending on how the map function returns data.
-        ds_resized.set_format(type='torch', columns=['image', 'faces'])
+        # Use Python format to avoid NumPy 2.0 copy=False issues in HF datasets.
+        ds_resized.set_format(type='python', columns=['image', 'faces'])
 
         return DataLoader(
             ds_resized,
